@@ -16,16 +16,16 @@ controller::update()
 actions_update()  -- 舵机动作 -->  sts3032
         |
         v
-balance_core_set_command()
+balance_core::set_command()
         |
         v
-balance_core_control_task()
+balance_core::control_task()
         |
         v
 motor::target_queue()
         |
         v
-balance_core_io_task()
+balance_core::io_task()
         |
         v
 motor::left.move() / motor::right.move()
@@ -35,26 +35,26 @@ motor::left.move() / motor::right.move()
 motor::left/right encoder
         |
         v
-balance_core_io_task()
+balance_core::io_task()
         |
         v
 motor::encoder_queue()
         |
         v
-balance_core_control_task()
+balance_core::control_task()
 ```
 
 ```text
 mpu6050_dev::imu
         |
         v
-balance_core_io_task()
+balance_core::io_task()
         |
         v
 mpu6050_dev::queue()
         |
         v
-balance_core_control_task()
+balance_core::control_task()
 ```
 
 所有跨任务队列都按“最新快照”使用，长度为 1，写入时覆盖旧值。
@@ -66,7 +66,7 @@ balance_core_control_task()
 1. `led_dev::init()` 初始化板载 LED。
 2. `xbox_dev::init()` 初始化 Xbox 输入队列和手柄对象。
 3. `host_comm::init()` 初始化 UART0 和 host remote 输入队列。
-4. `controller::balance_core_init()` 初始化平衡核心队列，并初始化 `sts3032`、`mpu6050_dev`、`motor`。
+4. `balance_core::init()` 初始化平衡核心队列，并初始化 `sts3032`、`mpu6050_dev`、`motor`。
 5. `controller::init()` 初始化上层动作状态机和腿部运行状态。
 6. `task_list()` 创建所有任务。
 
@@ -74,13 +74,13 @@ balance_core_control_task()
 
 - `led_dev::task`：低优先级 LED 闪烁。
 - `xbox_dev::task`：20 ms 采样一次手柄，发布 `xbox_dev::data`。
-- `controller::balance_core_io_task`：core 1 高频 IO 任务，负责 FOC、move、encoder、IMU。
-- `controller::balance_core_control_task`：core 0 1 kHz 控制任务，负责上层更新和平衡算法。
+- `balance_core::io_task`：core 1 高频 IO 任务，负责 FOC、move、encoder、IMU。
+- `balance_core::control_task`：core 0 1 kHz 控制任务，负责上层更新和平衡算法。
 - `host_comm::task`：1 kHz host 串口收发。
 
 ## 高频 IO 任务
 
-`balance_core_io_task()` 是唯一直接碰电机运动接口的地方。
+`balance_core::io_task()` 是唯一直接碰电机运动接口的地方。
 
 每轮循环：
 
@@ -95,7 +95,7 @@ balance_core_control_task()
 
 ## 1 kHz 控制任务
 
-`balance_core_control_task()` 每 1 ms 执行：
+`balance_core::control_task()` 每 1 ms 执行：
 
 ```cpp
 controller::update(1);
@@ -108,7 +108,7 @@ control_step(1);
 
 `controller::update()` 做四件事：
 
-1. `balance_core_get_status(status)` 读取上一轮平衡核心发布的状态。
+1. `balance_core::get_status(status)` 读取上一轮平衡核心发布的状态。
 2. `sample_input()` 采样输入：
    - 优先读取 `xbox_dev::queue()`。
    - 手柄未连接时读取 `host_comm::remote_queue()`。
@@ -119,11 +119,11 @@ control_step(1);
 最后调用：
 
 ```cpp
-balance_core_set_mode(actions_mode(action));
-balance_core_set_command(cmd);
+balance_core::set_mode(actions_mode(action));
+balance_core::set_command(cmd);
 ```
 
-`balance_core_set_mode()` 只更新状态显示用的模式字段；真正影响控制的是 `balance_core_set_command()`。
+`balance_core::set_mode()` 只更新状态显示用的模式字段；真正影响控制的是 `balance_core::set_command()`。
 
 ### 动作层
 
@@ -209,7 +209,7 @@ balance_core_set_command(cmd);
 2. `parse_rx()` 查找 `0xFF 0xAA` 帧头。
 3. type 为 `0x01` 的帧进入 `parse_xbox()`。
 4. `parse_xbox()` 把按钮和 6 路轴值写入 `host_comm::remote_queue()`。
-5. `send_status()` 每 20 ms 从 `balance_core_get_status()` 取状态并发送调试帧。
+5. `send_status()` 每 20 ms 从 `balance_core::get_status()` 取状态并发送调试帧。
 
 当 Xbox 已连接时，`controller::sample_input()` 使用 Xbox 输入；当 Xbox 未连接时，使用 host remote 输入作为后备。
 

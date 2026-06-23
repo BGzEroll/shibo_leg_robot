@@ -5,23 +5,21 @@
 #include "esp_timer.h"
 #include "freertos/task.h"
 
-namespace host_comm {
-
 static QueueHandle_t rx_queue = nullptr;
 static uint8_t rx_buf[256];
 static uint32_t rx_len = 0;
 static uint8_t tx_buf[160];
 static uint32_t send_timer = 0;
 
-QueueHandle_t remote_queue()
+QueueHandle_t host_comm::remote_queue()
 {
     return rx_queue;
 }
 
-void init()
+void host_comm::init()
 {
     uart_bus_init(&uart0);
-    rx_queue = xQueueCreate(1, sizeof(remote_data));
+    rx_queue = xQueueCreate(1, sizeof(host_comm::remote_data));
 }
 
 static void parse_xbox(uint8_t *frame)
@@ -29,7 +27,7 @@ static void parse_xbox(uint8_t *frame)
     if(frame[3] < 14){return;}
 
     uint8_t *p = &frame[4];
-    remote_data data;
+    host_comm::remote_data data;
     data.timestamp_us = (uint32_t)esp_timer_get_time();
     data.buttons = (uint16_t)(p[0] | (p[1] << 8));
     for(uint8_t i = 0; i < 6; i++)
@@ -103,8 +101,8 @@ static void send_status(uint32_t tick_ms)
     if((send_timer += tick_ms) < 20){return;}
     send_timer = 0;
 
-    controller::balance_status status;
-    if(!controller::balance_core_get_status(status)){return;}
+    balance_core::balance_status status;
+    if(!balance_core::get_status(status)){return;}
 
     uint32_t idx = 0;
     tx_buf[idx++] = 0xFF;
@@ -131,7 +129,7 @@ static void send_status(uint32_t tick_ms)
     uart0.write_bytes(&uart0, tx_buf, idx);
 }
 
-void task(void *arg)
+void host_comm::task(void *arg)
 {
     (void)arg;
     TickType_t last_wake_time = xTaskGetTickCount();
@@ -141,6 +139,4 @@ void task(void *arg)
         send_status(1);
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(1));
     }
-}
-
 }

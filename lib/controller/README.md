@@ -10,7 +10,7 @@
 
 关键边界：
 
-- 电机 `loopFOC()` 和电机 `move()` 只在 `balance_core_io_task()` 中执行。
+- 电机 `loopFOC()` 和电机 `move()` 只在 `balance_core::io_task()` 中执行。
 - 动作层不访问电机、不写 motor target queue、不修改 LQI 内部状态。
-- 上层控制意图统一通过 `balance_core_set_command()` 进入平衡核心。
+- 上层控制意图统一通过 `balance_core::set_command()` 进入平衡核心。
 - 队列均按最新快照使用，长度为 1，发布时覆盖旧值。

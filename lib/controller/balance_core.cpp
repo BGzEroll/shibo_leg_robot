@@ -7,15 +7,13 @@
 #include "mpu6050_dev.h"
 #include "sts3032.h"
 
-namespace controller {
-
 static QueueHandle_t command_queue = nullptr;
 static QueueHandle_t status_queue = nullptr;
 
 struct core_runtime {
-    lqi plant;
-    balance_command command;
-    balance_status status;
+    controller::lqi plant;
+    balance_core::balance_command command;
+    balance_core::balance_status status;
     LowPassFilter vel_filter{0.008f};
     float last_height = 0.0f;
     float lpf_linear_target = 0.0f;
@@ -29,7 +27,7 @@ struct core_runtime {
 
 static core_runtime core;
 
-float servo_count_to_height(int16_t position)
+float balance_core::servo_count_to_height(int16_t position)
 {
     float d = fabsf((float)position - 2048.0f);
     return ((4.6289047954e-12f * d - 9.3936274976e-08f) * d +
@@ -171,7 +169,7 @@ static void update_yaw_reference(float dt)
               core.plant.integral_clamp.yaw_rate_error);
 }
 
-static sensor_snapshot read_sensor(uint32_t tick_ms)
+static balance_core::sensor_snapshot read_sensor(uint32_t tick_ms)
 {
     if((core.servo_timer_ms += tick_ms) >= 20)
     {
@@ -179,12 +177,12 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
         sts3032::get_position_and_load();
     }
 
-    sensor_snapshot sensor;
+    balance_core::sensor_snapshot sensor;
     sensor.timestamp_us = (uint32_t)esp_timer_get_time();
     sensor.servo_position[0] = sts3032::status[0].position;
     sensor.servo_position[1] = sts3032::status[1].position;
-    sensor.leg_height[0] = servo_count_to_height(sensor.servo_position[0]);
-    sensor.leg_height[1] = servo_count_to_height(sensor.servo_position[1]);
+    sensor.leg_height[0] = balance_core::servo_count_to_height(sensor.servo_position[0]);
+    sensor.leg_height[1] = balance_core::servo_count_to_height(sensor.servo_position[1]);
     sensor.avg_leg_height = (sensor.leg_height[0] + sensor.leg_height[1]) * 0.5f;
 
     mpu6050_dev::data imu_data;
@@ -211,7 +209,7 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     return sensor;
 }
 
-static void update_state(const sensor_snapshot &sensor)
+static void update_state(const balance_core::sensor_snapshot &sensor)
 {
     if(sensor.imu_valid)
     {
@@ -308,7 +306,7 @@ static void control_step(uint32_t tick_ms)
     }
 
     float dt = (float)tick_ms * 1.0e-3f;
-    sensor_snapshot sensor = read_sensor(tick_ms);
+    balance_core::sensor_snapshot sensor = read_sensor(tick_ms);
 
     update_state(sensor);
     update_gain(sensor.avg_leg_height);
@@ -344,10 +342,10 @@ static void control_step(uint32_t tick_ms)
     }
 }
 
-void balance_core_init()
+void balance_core::init()
 {
-    command_queue = xQueueCreate(1, sizeof(balance_command));
-    status_queue = xQueueCreate(1, sizeof(balance_status));
+    command_queue = xQueueCreate(1, sizeof(balance_core::balance_command));
+    status_queue = xQueueCreate(1, sizeof(balance_core::balance_status));
     xQueueOverwrite(command_queue, &core.command);
 
     sts3032::init();
@@ -355,7 +353,7 @@ void balance_core_init()
     motor::init();
 }
 
-void balance_core_set_command(const balance_command &cmd)
+void balance_core::set_command(const balance_core::balance_command &cmd)
 {
     core.command = cmd;
     if(command_queue)
@@ -364,32 +362,32 @@ void balance_core_set_command(const balance_command &cmd)
     }
 }
 
-bool balance_core_get_status(balance_status &out)
+bool balance_core::get_status(balance_core::balance_status &out)
 {
     return status_queue && xQueuePeek(status_queue, &out, 0) == pdTRUE;
 }
 
-void balance_core_set_mode(mode_id mode)
+void balance_core::set_mode(controller::mode_id mode)
 {
     core.status.mode = mode;
 }
 
-float balance_core_max_linear_vel()
+float balance_core::max_linear_vel()
 {
     return core.plant.limit.max_linear_vel;
 }
 
-float balance_core_max_steer_vel()
+float balance_core::max_steer_vel()
 {
     return core.plant.limit.max_steer_vel;
 }
 
-float balance_core_wheel_radius()
+float balance_core::wheel_radius()
 {
     return core.plant.car.r;
 }
 
-void balance_core_io_task(void *arg)
+void balance_core::io_task(void *arg)
 {
     (void)arg;
     uint32_t last_encoder_us = (uint32_t)esp_timer_get_time();
@@ -447,17 +445,15 @@ void balance_core_io_task(void *arg)
     }
 }
 
-void balance_core_control_task(void *arg)
+void balance_core::control_task(void *arg)
 {
     (void)arg;
     TickType_t last_wake_time = xTaskGetTickCount();
 
     while(true)
     {
-        update(1);
+        controller::update(1);
         control_step(1);
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(1));
     }
-}
-
 }

@@ -1,8 +1,15 @@
 #include "actions.h"
 
 #include "sts3032.h"
+#include "xbox.h"
 
-namespace controller {
+using balance_core::balance_command;
+using balance_core::balance_status;
+using controller::action_io;
+using controller::action_state;
+using controller::jump_command;
+using controller::leg_runtime;
+using controller::mode_id;
 
 enum phase : uint8_t {
     PREPARE = 0,
@@ -368,17 +375,17 @@ static balance_command update_jump(action_state &state, action_io &ctx, uint32_t
     return cmd;
 }
 
-void actions_init(action_state &state)
+void controller::actions_init(action_state &state)
 {
     begin_mode(state, mode_id::BOOT);
 }
 
-mode_id actions_mode(const action_state &state)
+controller::mode_id controller::actions_mode(const action_state &state)
 {
     return state.mode;
 }
 
-balance_command actions_update(action_state &state, action_io &ctx, uint32_t tick_ms)
+balance_core::balance_command controller::actions_update(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
     if(state.mode != mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
     {
@@ -412,6 +419,4 @@ balance_command actions_update(action_state &state, action_io &ctx, uint32_t tic
         default:
             return balance_command{};
     }
-}
-
 }

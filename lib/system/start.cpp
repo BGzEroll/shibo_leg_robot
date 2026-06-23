@@ -12,8 +12,8 @@ static void task_list()
 {
     xTaskCreatePinnedToCore(led_dev::task, "led_dev_task", 1024, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(xbox_dev::task, "xbox_dev_task", 4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(controller::balance_core_io_task, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(controller::balance_core_control_task, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
+    xTaskCreatePinnedToCore(balance_core::io_task, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(balance_core::control_task, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
     xTaskCreatePinnedToCore(host_comm::task, "host_comm_task", 4096, nullptr, 3, nullptr, 0);
 }
 
@@ -24,7 +24,7 @@ void start_init_all()
     led_dev::init();
     xbox_dev::init();
     host_comm::init();
-    controller::balance_core_init();
+    balance_core::init();
     controller::init();
 
     task_list();

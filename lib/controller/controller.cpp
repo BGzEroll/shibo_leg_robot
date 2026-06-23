@@ -6,12 +6,10 @@
 #include "ptk7350.h"
 #include "xbox_dev.h"
 
-namespace controller {
-
-static action_state action;
-static leg_runtime leg;
-static control_input input;
-static balance_status status;
+static controller::action_state action;
+static controller::leg_runtime leg;
+static controller::control_input input;
+static balance_core::balance_status status;
 static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
@@ -26,7 +24,7 @@ static float apply_deadband(float value, float deadband)
 
 static void sample_input()
 {
-    input = control_input{};
+    input = controller::control_input{};
 
     if(xbox_dev::gamepad.get_connection_state())
     {
@@ -59,9 +57,9 @@ static void sample_input()
     float linear_axis = apply_deadband(input.axes[3], 0.05f);
     float yaw_axis = apply_deadband(input.axes[0], 0.05f);
 
-    input.linear_cmd = linear_axis * balance_core_max_linear_vel();
+    input.linear_cmd = linear_axis * balance_core::max_linear_vel();
     if(linear_axis < 0.0f){input.linear_cmd *= 0.8f;}
-    input.yaw_cmd = -yaw_axis * balance_core_max_steer_vel();
+    input.yaw_cmd = -yaw_axis * balance_core::max_steer_vel();
 }
 
 static void update_camera(uint32_t tick_ms)
@@ -88,22 +86,20 @@ static void update_camera(uint32_t tick_ms)
     }
 }
 
-void init()
+void controller::init()
 {
-    actions_init(action);
-    leg = leg_runtime{};
+    controller::actions_init(action);
+    leg = controller::leg_runtime{};
 }
 
-void update(uint32_t tick_ms)
+void controller::update(uint32_t tick_ms)
 {
-    balance_core_get_status(status);
+    balance_core::get_status(status);
     sample_input();
     update_camera(tick_ms);
 
-    action_io ctx{input, status, leg, balance_core_max_linear_vel()};
-    balance_command cmd = actions_update(action, ctx, tick_ms);
-    balance_core_set_mode(actions_mode(action));
-    balance_core_set_command(cmd);
-}
-
+    controller::action_io ctx{input, status, leg, balance_core::max_linear_vel()};
+    balance_core::balance_command cmd = controller::actions_update(action, ctx, tick_ms);
+    balance_core::set_mode(controller::actions_mode(action));
+    balance_core::set_command(cmd);
 }

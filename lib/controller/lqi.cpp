@@ -1,7 +1,5 @@
 #include "lqi.h"
 
-namespace controller {
-
 static const float lqi_gain_poly[12][4] = {
     { -19.78318794f,  2.96741131f, -3.67412914f, -3.30769108f},
     {  45.57101193f, -13.86222792f, -0.81410746f, -0.10765136f},
@@ -17,7 +15,7 @@ static const float lqi_gain_poly[12][4] = {
     { -0.00000000f,  0.00000000f, -0.00000000f, -0.33502155f}
 };
 
-lqi::lqi()
+controller::lqi::lqi()
 {
     car.r = 0.0526f / 2.0f;
     car.base_height = 0.03f;
@@ -35,6 +33,4 @@ lqi::lqi()
     memset(&state, 0, sizeof(state));
     memset(&ref, 0, sizeof(ref));
     memset(&integral, 0, sizeof(integral));
-}
-
 }
