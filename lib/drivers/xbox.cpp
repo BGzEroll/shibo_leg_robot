@@ -1,9 +1,9 @@
 #include "xbox.h"
 
 /**
- * @brief 构造函数
+ * @brief 构造 Xbox 手柄驱动对象
  *
- * @param mac Xbox 控制器的 MAC 地址
+ * @param mac Xbox 手柄 MAC 地址
  */
 xbox::xbox(const char *mac)
     : core(mac)
@@ -18,7 +18,7 @@ xbox::xbox(const char *mac)
 }
 
 /**
- * @brief 初始化 Xbox 控制器
+ * @brief 初始化 Xbox 手柄连接
  */
 void xbox::init()
 {
@@ -26,7 +26,7 @@ void xbox::init()
 }
 
 /**
- * @brief 更新 Xbox 控制器数据
+ * @brief 更新 Xbox 手柄输入和振动状态
  */
 void xbox::update()
 {
@@ -36,10 +36,10 @@ void xbox::update()
 }
 
 /**
- * @brief 设置按键振动
+ * @brief 设置按键反馈振动
  *
- * @param power 振动功率
- * @param duration 振动时间，单位毫秒
+ * @param power 振动强度
+ * @param duration 振动持续时间，单位毫秒
  */
 void xbox::set_key_vibration(uint8_t power, uint32_t duration)
 {
@@ -70,10 +70,10 @@ void xbox::set_key_vibration(uint8_t power, uint32_t duration)
 }
 
 /**
- * @brief 设置触发振动
+ * @brief 设置扳机反馈振动
  *
- * @param trigger 要设置的扳机，0 表示 RT，1 表示 LT
- * @param duration 振动时间，单位毫秒
+ * @param trigger 扳机编号
+ * @param duration 振动持续时间，单位毫秒
  */
 void xbox::set_trigger_vibration(uint8_t trigger, uint32_t duration)
 {
@@ -117,7 +117,7 @@ void xbox::set_trigger_vibration(uint8_t trigger, uint32_t duration)
 }
 
 /**
- * @brief 处理 Xbox 控制器通知
+ * @brief 处理 Xbox 蓝牙通知和连接状态
  */
 void xbox::process_notification()
 {
@@ -142,7 +142,7 @@ void xbox::process_notification()
 }
 
 /**
- * @brief 更新 Xbox 控制器振动
+ * @brief 更新 Xbox 振动持续时间状态
  */
 void xbox::update_vibration()
 {
@@ -159,7 +159,7 @@ void xbox::update_vibration()
 }
 
 /**
- * @brief 解析 Xbox 控制器数据
+ * @brief 解析 Xbox 输入数据到按钮和轴值
  */
 void xbox::parser_xbox_data()
 {

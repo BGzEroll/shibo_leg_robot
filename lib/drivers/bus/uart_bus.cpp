@@ -19,9 +19,13 @@ static uart_bus_ctx_t uart2Ctx = {.uart_handle = &Serial2, .baudrate = 1000000};
 uart_bus_t uart2 = {.ctx = &uart2Ctx};
 
 /**
- * @brief uart 连续读字节
+ * @brief 从 UART 读取可用字节
  *
- * @return 字节数
+ * @param self 总线实例指针
+ * @param buf 数据缓冲区
+ * @param max_len 最大读取长度
+ *
+ * @return 实际处理的数据长度
  */
 static uint32_t read_bytes(uart_bus_t *self, uint8_t *buf, uint32_t max_len)
 {
@@ -37,7 +41,11 @@ static uint32_t read_bytes(uart_bus_t *self, uint8_t *buf, uint32_t max_len)
 }
 
 /**
- * @brief uart 连续写字节
+ * @brief 向 UART 写入字节并等待发送完成
+ *
+ * @param self 总线实例指针
+ * @param buf 数据缓冲区
+ * @param len 数据长度
  */
 static void write_bytes(uart_bus_t *self, const uint8_t *buf, uint32_t len)
 {
@@ -48,7 +56,11 @@ static void write_bytes(uart_bus_t *self, const uint8_t *buf, uint32_t len)
 }
 
 /**
- * @brief 获取 uart 句柄供 Arduino 其余库使用
+ * @brief 获取底层 HardwareSerial 句柄
+ *
+ * @param self 总线实例指针
+ *
+ * @return 返回值
  */
 static HardwareSerial *get_HardwareSerial_handle(uart_bus_t *self)
 {
@@ -58,7 +70,9 @@ static HardwareSerial *get_HardwareSerial_handle(uart_bus_t *self)
 }
 
 /**
- * @brief 初始化 uart 驱动
+ * @brief 初始化 UART 总线实例
+ *
+ * @param self 总线实例指针
  */
 void uart_bus_init(uart_bus_t *self)
 {

@@ -21,7 +21,13 @@ static i2c_bus_ctx_t i2c2Ctx = {.i2c_handle = &wire_2, .scl_pin = 5, .sda_pin = 
 i2c_bus_t i2c2 = {.ctx = &i2c2Ctx};
 
 /**
- * @brief i2c 连续读
+ * @brief 从 I2C 设备连续读取寄存器数据
+ *
+ * @param self 总线实例指针
+ * @param addr 设备地址
+ * @param reg 寄存器地址
+ * @param buf 数据缓冲区
+ * @param len 数据长度
  */
 static void read_bytes(i2c_bus_t *self, uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len)
 {
@@ -36,7 +42,13 @@ static void read_bytes(i2c_bus_t *self, uint8_t addr, uint8_t reg, uint8_t *buf,
 }
 
 /**
- * @brief i2c 连续写
+ * @brief 向 I2C 设备连续写入寄存器数据
+ *
+ * @param self 总线实例指针
+ * @param addr 设备地址
+ * @param reg 寄存器地址
+ * @param buf 数据缓冲区
+ * @param len 数据长度
  */
 static void write_bytes(i2c_bus_t *self, uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len)
 {
@@ -49,7 +61,11 @@ static void write_bytes(i2c_bus_t *self, uint8_t addr, uint8_t reg, const uint8_
 }
 
 /**
- * @brief 获取 i2c 句柄供 Arduino 其余库使用
+ * @brief 获取底层 TwoWire 句柄
+ *
+ * @param self 总线实例指针
+ *
+ * @return 返回值
  */
 static TwoWire *get_TwoWire_handle(i2c_bus_t *self)
 {
@@ -59,7 +75,9 @@ static TwoWire *get_TwoWire_handle(i2c_bus_t *self)
 }
 
 /**
- * @brief 初始 i2c 驱动
+ * @brief 初始化 I2C 总线实例
+ *
+ * @param self 总线实例指针
  */
 void i2c_bus_init(i2c_bus_t *self)
 {

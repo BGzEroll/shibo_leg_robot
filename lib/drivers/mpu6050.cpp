@@ -10,11 +10,11 @@
 #define MPU6050_PWR_MGMT_1          0x6B
 
 /**
- * @brief 构造函数
+ * @brief 构造 MPU6050 驱动对象
  *
  * @param i2c I2C 总线指针
- * @param addr MPU6050 地址
- * @param acc_coef 加速度系数
+ * @param addr 设备地址
+ * @param acc_coef 加速度融合系数
  */
 mpu6050::mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef)
     : i2c(i2c), addr(addr), acc_coef(acc_coef)
@@ -25,9 +25,9 @@ mpu6050::mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef)
 }
 
 /**
- * @brief 初始化 MPU6050
+ * @brief 初始化 MPU6050 芯片配置
  *
- * @param cail 是否校准角速度
+ * @param cail 是否进行陀螺仪校准
  */
 void mpu6050::init(uint8_t cail)
 {
@@ -42,7 +42,7 @@ void mpu6050::init(uint8_t cail)
 }
 
 /**
- * @brief 更新 MPU6050 数据
+ * @brief 更新 MPU6050 姿态数据
  */
 void mpu6050::update()
 {
@@ -51,7 +51,7 @@ void mpu6050::update()
 }
 
 /**
- * @brief 读取 MPU6050 原始数据
+ * @brief 读取 MPU6050 原始传感器数据
  */
 void mpu6050::get_raw()
 {
@@ -59,7 +59,7 @@ void mpu6050::get_raw()
 }
 
 /**
- * @brief 处理 MPU6050 原始数据
+ * @brief 处理原始数据并更新姿态估计
  */
 void mpu6050::process_data()
 {
@@ -108,7 +108,7 @@ void mpu6050::process_data()
  * @brief 写入 MPU6050 配置寄存器
  *
  * @param reg 寄存器地址
- * @param val 寄存器值
+ * @param val 寄存器写入值
  */
 void mpu6050::write_cfg(uint8_t reg, uint8_t val)
 {
@@ -116,7 +116,7 @@ void mpu6050::write_cfg(uint8_t reg, uint8_t val)
 }
 
 /**
- * @brief 获取 MPU6050 角速度偏移
+ * @brief 采样并计算陀螺仪零偏
  */
 void mpu6050::get_gyro_offset()
 {

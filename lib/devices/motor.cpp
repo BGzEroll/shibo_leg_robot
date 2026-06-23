@@ -11,16 +11,29 @@ static QueueHandle_t motor_target_data_queue = nullptr;
 BLDCMotor motor::left = BLDCMotor(7, 12.27166f, 100.0f);
 BLDCMotor motor::right = BLDCMotor(7, 12.27166f, 100.0f);
 
+/**
+ * @brief 获取电机编码器数据队列
+ *
+ * @return 队列句柄
+ */
 QueueHandle_t motor::encoder_queue()
 {
     return encoder_data_queue;
 }
 
+/**
+ * @brief 获取电机目标输出队列
+ *
+ * @return 队列句柄
+ */
 QueueHandle_t motor::target_queue()
 {
     return motor_target_data_queue;
 }
 
+/**
+ * @brief 初始化电机、驱动器和编码器
+ */
 void motor::init()
 {
     i2c_bus_init(&i2c1);

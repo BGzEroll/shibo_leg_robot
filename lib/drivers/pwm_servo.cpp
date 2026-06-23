@@ -1,14 +1,14 @@
 #include "pwm_servo.h"
 
 /**
- * @brief pwm 舵机构造函数
+ * @brief 构造 PWM 舵机驱动对象
  *
- * @param pin 舵机引脚
- * @param channel 舵机通道
- * @param freq 舵机频率
- * @param resolution 舵机分辨率
- * @param min_us 舵机最小脉冲宽度
- * @param max_us 舵机最大脉冲宽度
+ * @param pin 引脚号
+ * @param channel PWM 通道
+ * @param freq PWM 频率
+ * @param resolution PWM 分辨率
+ * @param min_us 最小脉宽
+ * @param max_us 最大脉宽
  */
 pwm_servo::pwm_servo(uint8_t pin, uint8_t channel, uint32_t freq, uint8_t resolution, uint16_t min_us, uint16_t max_us)
     : pin(pin), channel(channel), freq(freq), resolution(resolution), min_us(min_us), max_us(max_us)
@@ -23,9 +23,9 @@ pwm_servo::pwm_servo(uint8_t pin, uint8_t channel, uint32_t freq, uint8_t resolu
 }
 
 /**
- * @brief 设置舵机角度
+ * @brief 按角度设置舵机输出
  *
- * @param angle 舵机角度
+ * @param angle 角度值
  */
 void pwm_servo::set_angle(uint16_t angle)
 {
@@ -38,9 +38,9 @@ void pwm_servo::set_angle(uint16_t angle)
 }
 
 /**
- * @brief 设置舵机脉冲宽度
+ * @brief 按脉宽设置舵机输出
  *
- * @param us 舵机脉冲宽度
+ * @param us 脉宽值
  */
 void pwm_servo::set_us(uint16_t us)
 {

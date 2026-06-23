@@ -26,6 +26,14 @@ static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
 static int16_t cam_last_angle = -1;
 
+/**
+ * @brief 对输入值应用死区并重新归一化
+ *
+ * @param value 需要积分的值
+ * @param deadband deadband
+ *
+ * @return 计算结果
+ */
 static float apply_deadband(float value, float deadband)
 {
     if(fabsf(value) <= deadband){return 0.0f;}
@@ -33,6 +41,9 @@ static float apply_deadband(float value, float deadband)
     return value > 0.0f ? mag : -mag;
 }
 
+/**
+ * @brief 采样手柄或上位机遥控输入
+ */
 static void sample_input()
 {
     input = controller::control_input{};
@@ -73,6 +84,11 @@ static void sample_input()
     input.yaw_cmd = -yaw_axis * balance_info.max_steer_vel;
 }
 
+/**
+ * @brief 更新摄像头舵机控制
+ *
+ * @param tick_ms 本次更新周期，单位毫秒
+ */
 static void update_camera(uint32_t tick_ms)
 {
     bool modifier = (input.raw_buttons & BTN_SELECT) != 0;
@@ -97,6 +113,9 @@ static void update_camera(uint32_t tick_ms)
     }
 }
 
+/**
+ * @brief 初始化控制器模块及其内部子模块
+ */
 void controller::init()
 {
     host_comm::init();
@@ -106,6 +125,11 @@ void controller::init()
     leg = controller::leg_runtime{};
 }
 
+/**
+ * @brief 执行一次上层控制器更新
+ *
+ * @param tick_ms 本次更新周期，单位毫秒
+ */
 void controller::update(uint32_t tick_ms)
 {
     balance_core::get_status(status);

@@ -27,6 +27,13 @@ enum phase : uint8_t
     RECOVER
 };
 
+/**
+ * @brief 将角度归一化到 -PI 到 PI 范围内
+ *
+ * @param angle 角度值
+ *
+ * @return 计算结果
+ */
 static float wrap_pi(float angle)
 {
     while(angle > PI){angle -= 2.0f * PI;}
@@ -34,11 +41,27 @@ static float wrap_pi(float angle)
     return angle;
 }
 
+/**
+ * @brief 计算目标角度和当前角度之间的最短误差
+ *
+ * @param target 目标值
+ * @param current 当前值
+ *
+ * @return 计算结果
+ */
 static float angle_error(float target, float current)
 {
     return wrap_pi(target - current);
 }
 
+/**
+ * @brief 设置左右腿舵机目标姿态并触发同步移动
+ *
+ * @param left 左侧目标值
+ * @param right 右侧目标值
+ * @param speed 舵机速度
+ * @param accel 舵机加速度
+ */
 static void set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel)
 {
     sts3032::set(SERVO_LEFT, left, speed, accel);
@@ -46,12 +69,22 @@ static void set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel)
     sts3032::move();
 }
 
+/**
+ * @brief 设置左右腿舵机扭矩模式
+ *
+ * @param type 扭矩模式类型
+ */
 static void set_torque(uint8_t type)
 {
     sts3032::set_torque_switch(SERVO_LEFT, type);
     sts3032::set_torque_switch(SERVO_RIGHT, type);
 }
 
+/**
+ * @brief 复位腿部运行状态和横滚 PID
+ *
+ * @param leg 腿部运行状态
+ */
 static void reset_leg(leg_runtime &leg)
 {
     leg.roll_adjust = 0.0f;
@@ -59,6 +92,11 @@ static void reset_leg(leg_runtime &leg)
     leg.reset_roll_pid();
 }
 
+/**
+ * @brief 根据输入和横滚姿态更新腿部舵机控制
+ *
+ * @param ctx 动作输入输出上下文
+ */
 static void run_leg_control(action_io &ctx)
 {
     if((ctx.input.buttons & BTN_RIGHT) && !(ctx.input.buttons & ~BTN_RIGHT)){ctx.leg.roll_adjust += 0.025f;}
@@ -76,6 +114,13 @@ static void run_leg_control(action_io &ctx)
     set_pose(left, right, 1000, 0);
 }
 
+/**
+ * @brief 切换动作模式并初始化该模式的运行状态
+ *
+ * @param state 动作状态机状态
+ * @param mode 目标动作模式
+ * @param jump 跳跃动作类型
+ */
 static void begin_mode(action_state &state, mode_id mode, jump_command jump = jump_command::IN_PLACE)
 {
     state.mode = mode;
@@ -96,6 +141,19 @@ static void begin_mode(action_state &state, mode_id mode, jump_command jump = ju
     if(jump == jump_command::TURN_RIGHT){state.jump_turn_dir = -1;}
 }
 
+/**
+ * @brief 判断恢复阶段是否已经满足稳定条件或等待超时
+ *
+ * @param state 动作状态机状态
+ * @param status 状态快照
+ * @param tick_ms 本次更新周期，单位毫秒
+ * @param pitch_limit 俯仰角允许阈值
+ * @param rate_limit 俯仰角速度允许阈值
+ * @param hold_ms 稳定保持时间，单位毫秒
+ * @param timeout_ms 恢复等待超时时间，单位毫秒
+ *
+ * @return 已经可以退出恢复阶段时返回 true
+ */
 static bool recover_ready(action_state &state, const balance_core::status_snapshot &status, uint32_t tick_ms,
     float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms)
 {
@@ -113,6 +171,14 @@ static bool recover_ready(action_state &state, const balance_core::status_snapsh
     return state.ready_timer >= hold_ms || state.elapsed >= timeout_ms;
 }
 
+/**
+ * @brief 生成恢复阶段使用的平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ *
+ * @return 生成的平衡请求
+ */
 static balance_request recover_command(action_state &state, action_io &ctx)
 {
     balance_request cmd;
@@ -124,6 +190,15 @@ static balance_request recover_command(action_state &state, action_io &ctx)
     return cmd;
 }
 
+/**
+ * @brief 更新 BOOT 模式状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 生成的平衡请求
+ */
 static balance_request update_boot(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
     balance_request cmd;
@@ -168,6 +243,14 @@ static balance_request update_boot(action_state &state, action_io &ctx, uint32_t
     return cmd;
 }
 
+/**
+ * @brief 更新 BALANCE 模式状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ *
+ * @return 生成的平衡请求
+ */
 static balance_request update_balance(action_state &state, action_io &ctx)
 {
     balance_request cmd;
@@ -193,6 +276,15 @@ static balance_request update_balance(action_state &state, action_io &ctx)
     return cmd;
 }
 
+/**
+ * @brief 更新 SIT 模式状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 生成的平衡请求
+ */
 static balance_request update_sit(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
     balance_request cmd;
@@ -249,6 +341,14 @@ static balance_request update_sit(action_state &state, action_io &ctx, uint32_t 
     return cmd;
 }
 
+/**
+ * @brief 根据跳跃阶段生成跳跃过程中的平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ *
+ * @return 生成的平衡请求
+ */
 static balance_request update_jump_command(action_state &state, action_io &ctx)
 {
     balance_request cmd;
@@ -307,6 +407,15 @@ static balance_request update_jump_command(action_state &state, action_io &ctx)
     return cmd;
 }
 
+/**
+ * @brief 更新 JUMP 模式状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 生成的平衡请求
+ */
 static balance_request update_jump(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
     balance_request cmd = update_jump_command(state, ctx);
@@ -375,16 +484,37 @@ static balance_request update_jump(action_state &state, action_io &ctx, uint32_t
     return cmd;
 }
 
+/**
+ * @brief 初始化动作状态机
+ *
+ * @param state 动作状态机状态
+ */
 void controller::actions_init(action_state &state)
 {
     begin_mode(state, mode_id::BOOT);
 }
 
+/**
+ * @brief 获取当前动作模式
+ *
+ * @param state 动作状态机状态
+ *
+ * @return 当前动作模式
+ */
 controller::mode_id controller::actions_mode(const action_state &state)
 {
     return state.mode;
 }
 
+/**
+ * @brief 按当前动作模式更新状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 生成的平衡请求
+ */
 controller::balance_request controller::actions_update(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
     if(state.mode != mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))

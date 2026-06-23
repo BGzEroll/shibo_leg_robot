@@ -20,11 +20,12 @@ servoStatus_t sts3032::status[SERVO_NUM];
 static uint8_t txBuf[128], txLen = 0;       // 发送缓冲区
 
 /**
- * @brief 将数据写入舵机发送缓冲区
+ * @brief 向舵机发送缓冲区追加数据
  *
- * @param data 指向要写入的数据缓冲区
- * @param len 数据长度（字节数）
- * @return 当前缓冲区长度
+ * @param data 数据缓冲区
+ * @param len 数据长度
+ *
+ * @return 实际处理的数据长度
  */
 static uint32_t write(uint8_t *data, uint32_t len)
 {
@@ -41,7 +42,7 @@ static uint32_t write(uint8_t *data, uint32_t len)
 }
 
 /**
- * @brief 发送缓冲区数据并清空
+ * @brief 发送并清空舵机发送缓冲区
  */
 static void wFlush(void)
 {
@@ -54,11 +55,11 @@ static void wFlush(void)
 }
 
 /**
- * @brief 交换 int16_t 数据的高低字节
+ * @brief 拆分 int16 数据的低字节和高字节
  *
- * @param dataL 低字节存放指针
- * @param dataH 高字节存放指针
- * @param data 要交换的 int16_t 数据
+ * @param dataL 低字节输出地址
+ * @param dataH 高字节输出地址
+ * @param data 数据缓冲区
  */
 static void swapByte(uint8_t *dataL, uint8_t *dataH, int16_t data)
 {
@@ -67,12 +68,12 @@ static void swapByte(uint8_t *dataL, uint8_t *dataH, int16_t data)
 }
 
 /**
- * @brief STS 舵机同步读
+ * @brief 发送 STS 舵机同步读命令
  *
- * @param ids 要读取的舵机 id 数组
+ * @param ids 舵机 ID 列表
  * @param servoNum 舵机数量
- * @param startReg 起始地址
- * @param len 读取到字节数
+ * @param startReg 起始寄存器地址
+ * @param len 数据长度
  */
 static void syncRead(uint8_t *ids, uint8_t servoNum, uint8_t startReg, uint8_t len)
 {
@@ -102,9 +103,9 @@ static void syncRead(uint8_t *ids, uint8_t servoNum, uint8_t startReg, uint8_t l
 }
 
 /**
- * @brief STS 舵机同步写
+ * @brief 发送 STS 舵机同步写命令
  *
- * @param idNum 要写入的舵机数量
+ * @param idNum 舵机数量
  * @param memAddr 内存表起始地址
  * @param nData 每个舵机的数据缓冲区
  * @param nLen 每个舵机的数据长度
@@ -145,9 +146,9 @@ static void syncWrite(uint8_t idNum, uint8_t memAddr, uint8_t *nData, uint8_t nL
 }
 
 /**
- * @brief STS 舵机设定姿态，构建每舵机数据包并调用同步写
+ * @brief 构建舵机位置数据并执行同步写
  *
- * @param idNum 要操作的舵机数量
+ * @param idNum 舵机数量
  */
 static void syncWritePosEx(uint8_t idNum)
 {
@@ -168,7 +169,13 @@ static void syncWritePosEx(uint8_t idNum)
 }
 
 /**
- * @brief 解包位置和负载信息
+ * @brief 解析 STS 舵机同步读返回帧
+ *
+ * @param ids 舵机 ID 列表
+ * @param n 舵机数量
+ * @param status 状态快照
+ *
+ * @return 解析结果状态码
  */
 static int32_t parseSyncRead(uint8_t *ids, uint8_t n, servoStatus_t *status)
 {
@@ -207,7 +214,7 @@ static int32_t parseSyncRead(uint8_t *ids, uint8_t n, servoStatus_t *status)
 }
 
 /**
- * @brief 获取左右腿舵机的位置和负载信息
+ * @brief 读取左右腿舵机的位置和负载
  */
 void sts3032::get_position_and_load()
 {
@@ -218,10 +225,10 @@ void sts3032::get_position_and_load()
 }
 
 /**
- * @brief 配置扭矩开关选项
+ * @brief 设置指定舵机的扭矩开关模式
  *
- * @param id 舵机 id
- * @param type 0 是关闭扭矩输出，1 是打开扭矩输出，2 是打开阻尼输出，128 是中位校准
+ * @param id 字段或设备 ID
+ * @param type 扭矩模式类型
  */
 void sts3032::set_torque_switch(uint8_t id, uint8_t type)
 {
@@ -249,12 +256,12 @@ void sts3032::set_torque_switch(uint8_t id, uint8_t type)
 }
 
 /**
- * @brief 设置单个舵机参数
+ * @brief 设置指定舵机的目标位置参数
  *
- * @param id 舵机 id
- * @param position 目标位置
- * @param speed 速度
- * @param acc 加速度
+ * @param id 字段或设备 ID
+ * @param position 舵机位置计数值
+ * @param speed 舵机速度
+ * @param acc acc
  */
 void sts3032::set(uint8_t id, int16_t position, int16_t speed, uint8_t acc)
 {
@@ -270,7 +277,7 @@ void sts3032::set(uint8_t id, int16_t position, int16_t speed, uint8_t acc)
 }
 
 /**
- * @brief 移动舵机
+ * @brief 在目标参数变化时同步移动舵机
  */
 void sts3032::move()
 {
@@ -285,6 +292,9 @@ void sts3032::move()
     }
 }
 
+/**
+ * @brief 初始化 STS3032 舵机总线和扭矩状态
+ */
 void sts3032::init()
 {
     uart_bus_init(pUart);

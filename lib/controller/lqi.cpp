@@ -29,6 +29,9 @@ lqi::integral_limit lqi::integral_clamp;
 float lqi::gain_poly[12][4];
 float lqi::feedback_gain[2][6];
 
+/**
+ * @brief 初始化 LQI 模型参数和运行状态
+ */
 void lqi::init()
 {
     car.r = 0.0526f / 2.0f;

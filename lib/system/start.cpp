@@ -8,6 +8,9 @@
 #include "led_dev.h"
 #include "xbox_dev.h"
 
+/**
+ * @brief 创建系统中的 RTOS 任务
+ */
 static void task_list()
 {
     xTaskCreatePinnedToCore(led_dev::task_entry, "led_dev_task", 1024, nullptr, 2, nullptr, 0);
@@ -17,6 +20,9 @@ static void task_list()
     xTaskCreatePinnedToCore(host_comm::task_entry, "host_comm_task", 4096, nullptr, 3, nullptr, 0);
 }
 
+/**
+ * @brief 执行系统启动初始化
+ */
 void start_init_all()
 {
     delay(1000);

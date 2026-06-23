@@ -50,6 +50,13 @@ struct core_runtime
 
 static core_runtime core;
 
+/**
+ * @brief 将舵机位置计数转换为腿长估计值
+ *
+ * @param position 舵机位置计数值
+ *
+ * @return 计算结果
+ */
 static float servo_count_to_height(int16_t position)
 {
     float d = fabsf((float)position - 2048.0f);
@@ -57,6 +64,9 @@ static float servo_count_to_height(int16_t position)
             1.5357902969e-04f) * d + 4.2041568108e-02f;
 }
 
+/**
+ * @brief 清空线速度和转向参考以及积分状态
+ */
 static void reset_reference()
 {
     core.lpf_linear_target = 0.0f;
@@ -70,12 +80,25 @@ static void reset_reference()
     lqi::integral.yaw_rate_error = 0.0f;
 }
 
+/**
+ * @brief 按误差积分并限制积分范围
+ *
+ * @param value 需要积分的值
+ * @param error 当前误差
+ * @param dt 时间步长，单位秒
+ * @param limit 积分限幅
+ */
 static void integrate(float &value, float error, float dt, float limit)
 {
     value += error * dt;
     value = constrain(value, -limit, limit);
 }
 
+/**
+ * @brief 根据腿长更新 LQI 反馈增益
+ *
+ * @param height 当前平均腿长
+ */
 static void update_gain(float height)
 {
     if(fabsf(height - core.last_height) < 1.0e-4f){return;}
@@ -99,6 +122,11 @@ static void update_gain(float height)
     }
 }
 
+/**
+ * @brief 更新线速度参考和线速度积分
+ *
+ * @param dt 时间步长，单位秒
+ */
 static void update_linear_reference(float dt)
 {
     const float tau = 0.024f;
@@ -161,6 +189,11 @@ static void update_linear_reference(float dt)
     core.last_linear_target = zero_cmd ? 0.0f : target;
 }
 
+/**
+ * @brief 更新转向角速度参考和转向积分
+ *
+ * @param dt 时间步长，单位秒
+ */
 static void update_yaw_reference(float dt)
 {
     if(!core.command.enable_steering)
@@ -187,6 +220,13 @@ static void update_yaw_reference(float dt)
               lqi::integral_clamp.yaw_rate_error);
 }
 
+/**
+ * @brief 读取传感器和编码器快照
+ *
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 传感器快照
+ */
 static sensor_snapshot read_sensor(uint32_t tick_ms)
 {
     if((core.servo_timer_ms += tick_ms) >= 20)
@@ -227,6 +267,11 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     return sensor;
 }
 
+/**
+ * @brief 将传感器快照写入 LQI 状态
+ *
+ * @param sensor 传感器快照
+ */
 static void update_state(const sensor_snapshot &sensor)
 {
     if(sensor.imu_valid)
@@ -248,6 +293,12 @@ static void update_state(const sensor_snapshot &sensor)
     }
 }
 
+/**
+ * @brief 发布左右电机目标输出
+ *
+ * @param left 左侧目标值
+ * @param right 右侧目标值
+ */
 static void publish_motor_target(float left, float right)
 {
     motor::target_data target;
@@ -260,6 +311,9 @@ static void publish_motor_target(float left, float right)
     }
 }
 
+/**
+ * @brief 根据当前状态和命令计算电机输出
+ */
 static void solve_output()
 {
     if(core.command.direct_output)
@@ -316,6 +370,11 @@ static void solve_output()
     publish_motor_target(core.status.output[0], core.status.output[1]);
 }
 
+/**
+ * @brief 执行一次平衡控制周期
+ *
+ * @param tick_ms 本次更新周期，单位毫秒
+ */
 static void control_step(uint32_t tick_ms)
 {
     float dt = (float)tick_ms * 1.0e-3f;
@@ -361,6 +420,9 @@ static void control_step(uint32_t tick_ms)
     }
 }
 
+/**
+ * @brief 初始化平衡核心及其底层设备
+ */
 void balance_core::init()
 {
     lqi::init();
@@ -372,21 +434,43 @@ void balance_core::init()
     motor::init();
 }
 
+/**
+ * @brief 设置平衡核心目标量
+ *
+ * @param target 目标值
+ */
 void balance_core::set_target(const balance_core::target_t &target)
 {
     core.target = target;
 }
 
+/**
+ * @brief 设置平衡核心控制命令
+ *
+ * @param command 控制命令
+ */
 void balance_core::set_command(const balance_core::command_t &command)
 {
     core.command = command;
 }
 
+/**
+ * @brief 读取平衡核心最新状态快照
+ *
+ * @param out 输出状态快照
+ *
+ * @return 条件是否成立
+ */
 bool balance_core::get_status(balance_core::status_snapshot &out)
 {
     return status_queue && xQueuePeek(status_queue, &out, 0) == pdTRUE;
 }
 
+/**
+ * @brief 获取平衡核心对上层公开的信息快照
+ *
+ * @return 平衡核心信息快照
+ */
 balance_core::info_t balance_core::get_info()
 {
     balance_core::info_t info;
@@ -396,6 +480,11 @@ balance_core::info_t balance_core::get_info()
     return info;
 }
 
+/**
+ * @brief 平衡核心高频 IO 任务入口
+ *
+ * @param arg RTOS 任务参数
+ */
 void balance_core::core_task_entry(void *arg)
 {
     (void)arg;
@@ -454,6 +543,11 @@ void balance_core::core_task_entry(void *arg)
     }
 }
 
+/**
+ * @brief 平衡核心控制任务入口
+ *
+ * @param arg RTOS 任务参数
+ */
 void balance_core::control_task_entry(void *arg)
 {
     (void)arg;

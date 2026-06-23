@@ -1,15 +1,15 @@
 #include "led.h"
 
 /**
- * @brief led 构造函数
+ * @brief 构造 LED 驱动对象
  *
- * @param pin led 引脚号
+ * @param pin 引脚号
  */
 led::led(uint8_t pin)
     : pin(pin){}
 
 /**
- * @brief 初始化 led
+ * @brief 初始化 LED 引脚
  */
 void led::init()
 {
@@ -17,7 +17,7 @@ void led::init()
 }
 
 /**
- * @brief 打开 led
+ * @brief 点亮 LED
  */
 void led::on()
 {
@@ -25,7 +25,7 @@ void led::on()
 }
 
 /**
- * @brief 关闭 led
+ * @brief 熄灭 LED
  */
 void led::off()
 {
@@ -33,7 +33,7 @@ void led::off()
 }
 
 /**
- * @brief 切换 led 状态
+ * @brief 切换 LED 输出状态
  */
 void led::toggle()
 {
