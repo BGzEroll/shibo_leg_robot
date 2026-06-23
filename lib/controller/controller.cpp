@@ -1,0 +1,109 @@
+#include "controller.h"
+
+#include "actions.h"
+#include "balance_core.h"
+#include "host_comm.h"
+#include "ptk7350.h"
+#include "xbox_dev.h"
+
+namespace controller {
+
+static action_state action;
+static leg_runtime leg;
+static control_input input;
+static balance_status status;
+static uint16_t last_buttons = 0;
+static float cam_angle = 90.0f;
+static float cam_speed = 0.0f;
+static int16_t cam_last_angle = -1;
+
+static float apply_deadband(float value, float deadband)
+{
+    if(fabsf(value) <= deadband){return 0.0f;}
+    float mag = (fabsf(value) - deadband) / (1.0f - deadband);
+    return value > 0.0f ? mag : -mag;
+}
+
+static void sample_input()
+{
+    input = control_input{};
+
+    if(xbox_dev::gamepad.get_connection_state())
+    {
+        xbox_dev::data gamepad_data;
+        if(xbox_dev::queue() && xQueuePeek(xbox_dev::queue(), &gamepad_data, 0) == pdTRUE)
+        {
+            input.raw_buttons = gamepad_data.buttons;
+            memcpy(input.axes, gamepad_data.axes, sizeof(input.axes));
+        }
+    }
+    else
+    {
+        host_comm::remote_data remote;
+        if(host_comm::remote_queue() && xQueuePeek(host_comm::remote_queue(), &remote, 0) == pdTRUE)
+        {
+            input.raw_buttons = remote.buttons;
+            memcpy(input.axes, remote.axes, sizeof(input.axes));
+        }
+    }
+
+    input.buttons = input.raw_buttons;
+    if(input.buttons & BTN_SELECT)
+    {
+        input.buttons &= (uint16_t)~(BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT);
+    }
+
+    input.pressed_buttons = input.buttons & (uint16_t)(~last_buttons);
+    last_buttons = input.buttons;
+
+    float linear_axis = apply_deadband(input.axes[3], 0.05f);
+    float yaw_axis = apply_deadband(input.axes[0], 0.05f);
+
+    input.linear_cmd = linear_axis * balance_core_max_linear_vel();
+    if(linear_axis < 0.0f){input.linear_cmd *= 0.8f;}
+    input.yaw_cmd = -yaw_axis * balance_core_max_steer_vel();
+}
+
+static void update_camera(uint32_t tick_ms)
+{
+    bool modifier = (input.raw_buttons & BTN_SELECT) != 0;
+    bool up = (input.raw_buttons & BTN_UP) != 0;
+    bool down = (input.raw_buttons & BTN_DOWN) != 0;
+    float target_speed = 0.0f;
+
+    if(modifier)
+    {
+        if(up && !down){target_speed = 120.0f;}
+        if(down && !up){target_speed = -120.0f;}
+    }
+
+    float dt = (float)tick_ms * 1.0e-3f;
+    cam_speed += (target_speed - cam_speed) * (1.0f - expf(-dt / 0.05f));
+    cam_angle = constrain(cam_angle + cam_speed * dt, (float)CAMSERVO_MIN, (float)CAMSERVO_MAX);
+
+    if((int16_t)cam_angle != cam_last_angle)
+    {
+        cam_last_angle = (int16_t)cam_angle;
+        ptk7350::cam_servo.set_angle((uint16_t)cam_angle);
+    }
+}
+
+void init()
+{
+    actions_init(action);
+    leg = leg_runtime{};
+}
+
+void update(uint32_t tick_ms)
+{
+    balance_core_get_status(status);
+    sample_input();
+    update_camera(tick_ms);
+
+    action_io ctx{input, status, leg, balance_core_max_linear_vel()};
+    balance_command cmd = actions_update(action, ctx, tick_ms);
+    balance_core_set_mode(actions_mode(action));
+    balance_core_set_command(cmd);
+}
+
+}
