@@ -2,7 +2,7 @@
 
 /**
  * @brief 构造函数
- * 
+ *
  * @param mac Xbox 控制器的 MAC 地址
  */
 xbox::xbox(const char *mac)
@@ -37,7 +37,7 @@ void xbox::update()
 
 /**
  * @brief 设置按键振动
- * 
+ *
  * @param power 振动功率
  * @param duration 振动时间，单位毫秒
  */
@@ -71,7 +71,7 @@ void xbox::set_key_vibration(uint8_t power, uint32_t duration)
 
 /**
  * @brief 设置触发振动
- * 
+ *
  * @param trigger 要设置的扳机，0 表示 RT，1 表示 LT
  * @param duration 振动时间，单位毫秒
  */

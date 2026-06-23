@@ -3,24 +3,22 @@
 #include "esp_timer.h"
 #include <string.h>
 
-namespace xbox_dev {
-
-xbox gamepad("fc:0b:58:01:99:76");
+xbox xbox_dev::gamepad("fc:0b:58:01:99:76");
 static QueueHandle_t xbox_data_queue = nullptr;
 
-QueueHandle_t queue()
+QueueHandle_t xbox_dev::queue()
 {
     return xbox_data_queue;
 }
 
-void init()
+void xbox_dev::init()
 {
     gamepad.init();
 
-    xbox_data_queue = xQueueCreate(1, sizeof(data));
+    xbox_data_queue = xQueueCreate(1, sizeof(xbox_dev::data));
 }
 
-void task(void *arg)
+void xbox_dev::task(void *arg)
 {
     (void)arg;
 
@@ -40,6 +38,4 @@ void task(void *arg)
 
         delay(20);
     }
-}
-
 }

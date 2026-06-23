@@ -3,7 +3,8 @@
 static TwoWire wire_1 = TwoWire(0);
 static TwoWire wire_2 = TwoWire(1);
 
-typedef struct i2c_bus_ctx {
+typedef struct i2c_bus_ctx
+{
     TwoWire *i2c_handle;
     uint8_t scl_pin;
     uint8_t sda_pin;

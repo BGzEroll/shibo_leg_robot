@@ -16,16 +16,16 @@ controller::update()
 actions_update()  -- 舵机动作 -->  sts3032
         |
         v
-balance_core::set_command()
+balance_core setters
         |
         v
-balance_core::control_task()
+balance_core::control_task_entry()
         |
         v
 motor::target_queue()
         |
         v
-balance_core::io_task()
+balance_core::core_task_entry()
         |
         v
 motor::left.move() / motor::right.move()
@@ -35,26 +35,26 @@ motor::left.move() / motor::right.move()
 motor::left/right encoder
         |
         v
-balance_core::io_task()
+balance_core::core_task_entry()
         |
         v
 motor::encoder_queue()
         |
         v
-balance_core::control_task()
+balance_core::control_task_entry()
 ```
 
 ```text
 mpu6050_dev::imu
         |
         v
-balance_core::io_task()
+balance_core::core_task_entry()
         |
         v
 mpu6050_dev::queue()
         |
         v
-balance_core::control_task()
+balance_core::control_task_entry()
 ```
 
 所有跨任务队列都按“最新快照”使用，长度为 1，写入时覆盖旧值。
@@ -66,7 +66,7 @@ balance_core::control_task()
 1. `led_dev::init()` 初始化板载 LED。
 2. `xbox_dev::init()` 初始化 Xbox 输入队列和手柄对象。
 3. `host_comm::init()` 初始化 UART0 和 host remote 输入队列。
-4. `balance_core::init()` 初始化平衡核心队列，并初始化 `sts3032`、`mpu6050_dev`、`motor`。
+4. `balance_core::init()` 初始化平衡核心状态队列，并初始化 `sts3032`、`mpu6050_dev`、`motor`。
 5. `controller::init()` 初始化上层动作状态机和腿部运行状态。
 6. `task_list()` 创建所有任务。
 
@@ -74,13 +74,13 @@ balance_core::control_task()
 
 - `led_dev::task`：低优先级 LED 闪烁。
 - `xbox_dev::task`：20 ms 采样一次手柄，发布 `xbox_dev::data`。
-- `balance_core::io_task`：core 1 高频 IO 任务，负责 FOC、move、encoder、IMU。
-- `balance_core::control_task`：core 0 1 kHz 控制任务，负责上层更新和平衡算法。
+- `balance_core::core_task_entry`：core 1 高频 IO 任务，负责 FOC、move、encoder、IMU。
+- `balance_core::control_task_entry`：core 0 1 kHz 控制任务，负责上层更新和平衡算法。
 - `host_comm::task`：1 kHz host 串口收发。
 
 ## 高频 IO 任务
 
-`balance_core::io_task()` 是唯一直接碰电机运动接口的地方。
+`balance_core::core_task_entry()` 是唯一直接碰电机运动接口的地方。
 
 每轮循环：
 
@@ -95,7 +95,7 @@ balance_core::control_task()
 
 ## 1 kHz 控制任务
 
-`balance_core::control_task()` 每 1 ms 执行：
+`balance_core::control_task_entry()` 每 1 ms 执行：
 
 ```cpp
 controller::update(1);
@@ -114,30 +114,30 @@ control_step(1);
    - 手柄未连接时读取 `host_comm::remote_queue()`。
    - 生成 `control_input`，包括按钮、边沿按钮、摇杆目标速度。
 3. `update_camera()` 处理 `SELECT + UP/DOWN` 摄像头舵机控制。
-4. `actions_update()` 根据当前模式生成 `balance_command`。
+4. `actions_update()` 根据当前模式生成 `balance_request`。
 
-最后调用：
+最后把 `balance_request` 翻译为底层接口调用：
 
 ```cpp
-balance_core::set_mode(actions_mode(action));
-balance_core::set_command(cmd);
+balance_core::set_target(request.target);
+balance_core::set_command(request.command);
 ```
 
-`balance_core::set_mode()` 只更新状态显示用的模式字段；真正影响控制的是 `balance_core::set_command()`。
+`balance_core` 不再保存上层模式；动作模式只留在 `actions.*`。
 
 ### 动作层
 
 `actions_update()` 根据 `mode_id` 分发：
 
 - `BOOT`：等待 `RB`，随后立腿、准备、recover，成功后进入 `BALANCE`。
-- `BALANCE`：正常平衡，摇杆给 `target_linear_vel` 和 `target_yaw_rate`；按钮触发坐下或跳跃。
+- `BALANCE`：正常平衡，摇杆给 `target.linear_vel` 和 `target.yaw_rate`；按钮触发坐下或跳跃。
 - `SIT`：坐下、坐下保持、退出坐下、recover。
 - `JUMP`：跳跃准备、推蹬、飞行、落地、恢复。
 - `STOP`：停止输出；非 STOP 模式按 `START` 进入，STOP 下按 `RB` 回到 `BOOT`。
 
 动作层可以做：
 
-- 设置 `balance_command`。
+- 设置 `balance_request`。
 - 调 `sts3032::set()` / `sts3032::move()` 控制腿部舵机。
 - 调 `sts3032::set_torque_switch()` 切换舵机扭矩。
 
@@ -151,8 +151,8 @@ balance_core::set_command(cmd);
 
 `control_step()` 是底层平衡核心的主路径：
 
-1. 从 `command_queue` 读取最新 `balance_command`。
-2. `read_sensor()` 组装 `sensor_snapshot`：
+1. 读取 `controller::update()` 刚写入的内部请求状态。
+2. `read_sensor()` 组装内部传感快照：
    - 每 20 ms 调 `sts3032::get_position_and_load()` 更新腿部位置。
    - 从 `mpu6050_dev::queue()` 读 IMU 快照。
    - 从 `motor::encoder_queue()` 读 encoder 快照。
@@ -166,34 +166,34 @@ balance_core::set_command(cmd);
    - `update_linear_reference()` 更新线速度参考和线速度积分。
    - `update_yaw_reference()` 更新 yaw rate 参考和 yaw 积分。
 7. 如果 `enable_balance` 为 false，清空参考和积分。
-8. `solve_output()` 计算输出或处理手动输出。
-9. 发布 `balance_status` 到 `status_queue`。
+8. `solve_output()` 计算 LQR 输出或处理 direct output。
+9. 发布 `status_snapshot` 到 `status_queue`。
 
-## balance_command 语义
+## balance_request 语义
 
-`balance_command` 是上层到平衡核心的唯一控制入口。
+`balance_request` 是动作层内部表达意图的结构；它由 `target_t` 和 `command_t` 组成，`controller::update()` 会把两部分分别传给 `balance_core::set_target()` 和 `balance_core::set_command()`。
 
-- `enable_motor`：false 时输出 0 到电机目标队列。
-- `enable_balance`：false 时不做 LQI 平衡输出，并清空运动参考。
-- `enable_steering`：false 时 yaw 参考和 yaw 积分归零。
-- `reset_reference`：清空线速度、yaw 参考和积分。
-- `reset_yaw_integral`：只清 yaw 积分。
-- `target_linear_vel`：上层希望的线速度目标。
-- `target_yaw_rate`：上层希望的 yaw rate 目标。
-- `manual_output`：true 时跳过 LQI，直接发布 `manual_left/right`。
-- `suppress_linear_feedback`：计算反馈向量时忽略线速度误差。
-- `suppress_yaw_feedback`：计算反馈向量时忽略 yaw rate 误差和 yaw 积分。
-- `suppress_yaw_integral`：不使用或清除 yaw 积分。
-- `recover_active`：恢复阶段只保留 pitch 角和 pitch 角速度反馈。
-- `output_blend`：恢复阶段用来平滑放大输出。
+- `target.linear_vel`：上层希望的线速度目标。
+- `target.yaw_rate`：上层希望的 yaw rate 目标。
+- `target.direct_left/right`：direct output 模式下的左右电机目标值。
+- `command.enable_motor`：false 时输出 0 到电机目标队列。
+- `command.enable_balance`：false 时不做 LQI 平衡输出，并清空运动参考。
+- `command.enable_steering`：false 时 yaw 参考和 yaw 积分归零。
+- `command.reset_reference`：清空线速度、yaw 参考和积分。
+- `command.reset_yaw_integral`：只清 yaw 积分。
+- `command.direct_output`：true 时跳过 LQI，直接发布 `target.direct_left/right`。
+- `command.suppress_linear_feedback`：计算反馈向量时忽略线速度误差。
+- `command.suppress_yaw_feedback`：计算反馈向量时忽略 yaw rate 误差和 yaw 积分。
+- `command.suppress_yaw_integral`：不使用或清除 yaw 积分。
+- `command.recover_active`：恢复阶段只保留 pitch 角和 pitch 角速度反馈。
+- `command.output_blend`：恢复阶段用来平滑放大输出。
 
-## balance_status 语义
+## status_snapshot 语义
 
-`balance_status` 是底层向上层和 host 输出的最新状态。
+`status_snapshot` 是底层向上层和 host 输出的最新状态。
 
-- `mode`：当前动作模式，仅用于显示和调试。
-- `feedback`：LQI 当前反馈状态。
-- `reference`：当前线速度和 yaw rate 参考。
+- `pitch_angle`、`pitch_rate`、`avg_linear_pos`、`avg_linear_vel`、`yaw_angle`、`yaw_rate`：LQI 当前反馈状态。
+- `reference_linear_vel`、`reference_yaw_rate`：当前线速度和 yaw rate 参考。
 - `input`：当前命令目标值。
 - `feedback_vector`：进入 LQI 求解的 6 维反馈向量。
 - `output`：左右电机目标输出。
@@ -234,8 +234,8 @@ balance_core::set_command(cmd);
 
 1. 在 `mode_id` 中增加新模式。
 2. 在 `action_state` 中加入动作需要的少量运行状态。
-3. 写一个 `update_xxx()`，返回 `balance_command`。
+3. 写一个 `update_xxx()`，返回 `balance_request`。
 4. 在 `actions_update()` 中添加分支。
 5. 从现有模式中按按钮或条件调用 `begin_mode()` 切换过去。
 
-新动作仍然只通过 `balance_command` 影响平衡核心；如果需要腿部姿态，直接调用 `sts3032` 模块；不要访问电机和 LQI 内部状态。
+新动作仍然只通过 `balance_request` 影响平衡核心；如果需要腿部姿态，直接调用 `sts3032` 模块；不要访问电机和 LQI 内部状态。

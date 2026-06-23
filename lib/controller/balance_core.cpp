@@ -3,17 +3,31 @@
 #include "controller.h"
 #include "esp_timer.h"
 #include "freertos/task.h"
+#include "lqi.h"
 #include "motor.h"
 #include "mpu6050_dev.h"
 #include "sts3032.h"
 
-static QueueHandle_t command_queue = nullptr;
+struct sensor_snapshot
+{
+    bool imu_valid = false;
+    bool encoder_valid = false;
+    uint32_t timestamp_us = 0;
+    controller::lqi::feedback_state feedback{};
+    float roll_angle = 0.0f;
+    float leg_height[2]{};
+    float avg_leg_height = 0.0f;
+    int16_t servo_position[2]{};
+};
+
 static QueueHandle_t status_queue = nullptr;
 
-struct core_runtime {
+struct core_runtime
+{
     controller::lqi plant;
-    balance_core::balance_command command;
-    balance_core::balance_status status;
+    balance_core::target_t target;
+    balance_core::command_t command;
+    balance_core::status_snapshot status;
     LowPassFilter vel_filter{0.008f};
     float last_height = 0.0f;
     float lpf_linear_target = 0.0f;
@@ -27,24 +41,19 @@ struct core_runtime {
 
 static core_runtime core;
 
-float balance_core::servo_count_to_height(int16_t position)
+static float servo_count_to_height(int16_t position)
 {
     float d = fabsf((float)position - 2048.0f);
     return ((4.6289047954e-12f * d - 9.3936274976e-08f) * d +
             1.5357902969e-04f) * d + 4.2041568108e-02f;
 }
 
-static void reset_linear_reference()
+static void reset_reference()
 {
     core.lpf_linear_target = 0.0f;
     core.last_linear_target = 0.0f;
     core.linear_release_timer = 0.0f;
     core.linear_release = false;
-}
-
-static void reset_reference()
-{
-    reset_linear_reference();
     core.lpf_yaw_target = 0.0f;
     core.plant.ref.linear_vel = 0.0f;
     core.plant.ref.yaw_rate = 0.0f;
@@ -91,7 +100,7 @@ static void update_linear_reference(float dt)
     const float release_stop_speed = 0.035f;
     const float dead_zone = core.plant.limit.max_linear_vel * 0.05f;
 
-    float target = core.command.target_linear_vel;
+    float target = core.target.linear_vel;
     bool zero_cmd = fabsf(target) < dead_zone;
     bool had_cmd = fabsf(core.last_linear_target) >= dead_zone;
     core.lpf_linear_target += (target - core.lpf_linear_target) * (1.0f - expf(-dt / tau));
@@ -154,7 +163,7 @@ static void update_yaw_reference(float dt)
     }
 
     const float tau = 0.009f;
-    core.lpf_yaw_target += (core.command.target_yaw_rate - core.lpf_yaw_target) * (1.0f - expf(-dt / tau));
+    core.lpf_yaw_target += (core.target.yaw_rate - core.lpf_yaw_target) * (1.0f - expf(-dt / tau));
     core.plant.ref.yaw_rate = core.lpf_yaw_target;
 
     if(core.command.suppress_yaw_integral)
@@ -169,7 +178,7 @@ static void update_yaw_reference(float dt)
               core.plant.integral_clamp.yaw_rate_error);
 }
 
-static balance_core::sensor_snapshot read_sensor(uint32_t tick_ms)
+static sensor_snapshot read_sensor(uint32_t tick_ms)
 {
     if((core.servo_timer_ms += tick_ms) >= 20)
     {
@@ -177,12 +186,12 @@ static balance_core::sensor_snapshot read_sensor(uint32_t tick_ms)
         sts3032::get_position_and_load();
     }
 
-    balance_core::sensor_snapshot sensor;
+    sensor_snapshot sensor;
     sensor.timestamp_us = (uint32_t)esp_timer_get_time();
     sensor.servo_position[0] = sts3032::status[0].position;
     sensor.servo_position[1] = sts3032::status[1].position;
-    sensor.leg_height[0] = balance_core::servo_count_to_height(sensor.servo_position[0]);
-    sensor.leg_height[1] = balance_core::servo_count_to_height(sensor.servo_position[1]);
+    sensor.leg_height[0] = servo_count_to_height(sensor.servo_position[0]);
+    sensor.leg_height[1] = servo_count_to_height(sensor.servo_position[1]);
     sensor.avg_leg_height = (sensor.leg_height[0] + sensor.leg_height[1]) * 0.5f;
 
     mpu6050_dev::data imu_data;
@@ -209,7 +218,7 @@ static balance_core::sensor_snapshot read_sensor(uint32_t tick_ms)
     return sensor;
 }
 
-static void update_state(const balance_core::sensor_snapshot &sensor)
+static void update_state(const sensor_snapshot &sensor)
 {
     if(sensor.imu_valid)
     {
@@ -244,11 +253,11 @@ static void publish_motor_target(float left, float right)
 
 static void solve_output()
 {
-    if(core.command.manual_output)
+    if(core.command.direct_output)
     {
-        core.status.output[0] = core.command.manual_left;
-        core.status.output[1] = core.command.manual_right;
-        publish_motor_target(core.command.manual_left, core.command.manual_right);
+        core.status.output[0] = core.target.direct_left;
+        core.status.output[1] = core.target.direct_right;
+        publish_motor_target(core.target.direct_left, core.target.direct_right);
         return;
     }
     if(!core.command.enable_motor)
@@ -300,13 +309,8 @@ static void solve_output()
 
 static void control_step(uint32_t tick_ms)
 {
-    if(command_queue)
-    {
-        xQueuePeek(command_queue, &core.command, 0);
-    }
-
     float dt = (float)tick_ms * 1.0e-3f;
-    balance_core::sensor_snapshot sensor = read_sensor(tick_ms);
+    sensor_snapshot sensor = read_sensor(tick_ms);
 
     update_state(sensor);
     update_gain(sensor.avg_leg_height);
@@ -325,10 +329,16 @@ static void control_step(uint32_t tick_ms)
     }
 
     core.status.timestamp_us = sensor.timestamp_us;
-    core.status.feedback = core.plant.state;
-    core.status.reference = core.plant.ref;
-    core.status.input[0] = core.command.target_linear_vel;
-    core.status.input[1] = core.command.target_yaw_rate;
+    core.status.pitch_angle = core.plant.state.pitch_angle;
+    core.status.pitch_rate = core.plant.state.pitch_rate;
+    core.status.avg_linear_pos = core.plant.state.avg_linear_pos;
+    core.status.avg_linear_vel = core.plant.state.avg_linear_vel;
+    core.status.yaw_angle = core.plant.state.yaw_angle;
+    core.status.yaw_rate = core.plant.state.yaw_rate;
+    core.status.reference_linear_vel = core.plant.ref.linear_vel;
+    core.status.reference_yaw_rate = core.plant.ref.yaw_rate;
+    core.status.input[0] = core.target.linear_vel;
+    core.status.input[1] = core.target.yaw_rate;
     core.status.roll_angle = sensor.roll_angle;
     core.status.leg_height[0] = sensor.leg_height[0];
     core.status.leg_height[1] = sensor.leg_height[1];
@@ -344,32 +354,26 @@ static void control_step(uint32_t tick_ms)
 
 void balance_core::init()
 {
-    command_queue = xQueueCreate(1, sizeof(balance_core::balance_command));
-    status_queue = xQueueCreate(1, sizeof(balance_core::balance_status));
-    xQueueOverwrite(command_queue, &core.command);
+    status_queue = xQueueCreate(1, sizeof(balance_core::status_snapshot));
 
     sts3032::init();
     mpu6050_dev::init();
     motor::init();
 }
 
-void balance_core::set_command(const balance_core::balance_command &cmd)
+void balance_core::set_target(const balance_core::target_t &target)
 {
-    core.command = cmd;
-    if(command_queue)
-    {
-        xQueueOverwrite(command_queue, &core.command);
-    }
+    core.target = target;
 }
 
-bool balance_core::get_status(balance_core::balance_status &out)
+void balance_core::set_command(const balance_core::command_t &command)
+{
+    core.command = command;
+}
+
+bool balance_core::get_status(balance_core::status_snapshot &out)
 {
     return status_queue && xQueuePeek(status_queue, &out, 0) == pdTRUE;
-}
-
-void balance_core::set_mode(controller::mode_id mode)
-{
-    core.status.mode = mode;
 }
 
 float balance_core::max_linear_vel()
@@ -387,7 +391,7 @@ float balance_core::wheel_radius()
     return core.plant.car.r;
 }
 
-void balance_core::io_task(void *arg)
+void balance_core::core_task_entry(void *arg)
 {
     (void)arg;
     uint32_t last_encoder_us = (uint32_t)esp_timer_get_time();
@@ -445,7 +449,7 @@ void balance_core::io_task(void *arg)
     }
 }
 
-void balance_core::control_task(void *arg)
+void balance_core::control_task_entry(void *arg)
 {
     (void)arg;
     TickType_t last_wake_time = xTaskGetTickCount();

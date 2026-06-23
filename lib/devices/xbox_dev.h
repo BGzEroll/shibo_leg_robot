@@ -3,21 +3,20 @@
 
 #include "xbox.h"
 
-namespace xbox_dev {
-
-struct data
+namespace xbox_dev
 {
-    uint32_t timestamp_us;
-    uint16_t buttons;
-    float axes[6];
-};
+	struct data
+	{
+		uint32_t timestamp_us;
+		uint16_t buttons;
+		float axes[6];
+	};
 
-extern xbox gamepad;
+	extern xbox gamepad;
 
-QueueHandle_t queue();
-void init();
-void task(void *arg);
-
+	QueueHandle_t queue();
+	void init();
+	void task(void *arg);
 }
 
 #endif

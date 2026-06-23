@@ -1,7 +1,5 @@
 #include "motor.h"
 
-namespace motor {
-
 static BLDCDriver3PWM left_driver = BLDCDriver3PWM(32, 33, 25, 22);
 static BLDCDriver3PWM right_driver = BLDCDriver3PWM(26, 27, 14, 12);
 static MagneticSensorI2C left_encoder = MagneticSensorI2C(AS5600_I2C);
@@ -10,20 +8,20 @@ static MagneticSensorI2C right_encoder = MagneticSensorI2C(AS5600_I2C);
 static QueueHandle_t encoder_data_queue = nullptr;
 static QueueHandle_t motor_target_data_queue = nullptr;
 
-BLDCMotor left = BLDCMotor(7, 12.27166f, 100.0f);
-BLDCMotor right = BLDCMotor(7, 12.27166f, 100.0f);
+BLDCMotor motor::left = BLDCMotor(7, 12.27166f, 100.0f);
+BLDCMotor motor::right = BLDCMotor(7, 12.27166f, 100.0f);
 
-QueueHandle_t encoder_queue()
+QueueHandle_t motor::encoder_queue()
 {
     return encoder_data_queue;
 }
 
-QueueHandle_t target_queue()
+QueueHandle_t motor::target_queue()
 {
     return motor_target_data_queue;
 }
 
-void init()
+void motor::init()
 {
     i2c_bus_init(&i2c1);
     i2c_bus_init(&i2c2);
@@ -59,6 +57,4 @@ void init()
     left.initFOC();
     right.init();
     right.initFOC();
-}
-
 }

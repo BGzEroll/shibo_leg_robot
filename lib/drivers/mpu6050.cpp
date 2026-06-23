@@ -11,7 +11,7 @@
 
 /**
  * @brief 构造函数
- * 
+ *
  * @param i2c I2C 总线指针
  * @param addr MPU6050 地址
  * @param acc_coef 加速度系数
@@ -26,7 +26,7 @@ mpu6050::mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef)
 
 /**
  * @brief 初始化 MPU6050
- * 
+ *
  * @param cail 是否校准角速度
  */
 void mpu6050::init(uint8_t cail)
@@ -106,7 +106,7 @@ void mpu6050::process_data()
 
 /**
  * @brief 写入 MPU6050 配置寄存器
- * 
+ *
  * @param reg 寄存器地址
  * @param val 寄存器值
  */

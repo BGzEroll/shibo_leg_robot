@@ -2,7 +2,7 @@
 
 /**
  * @brief led 构造函数
- * 
+ *
  * @param pin led 引脚号
  */
 led::led(uint8_t pin)

@@ -5,7 +5,8 @@
 
 typedef struct uart_bus uart_bus_t;
 
-struct uart_bus {
+struct uart_bus
+{
     uint32_t (*read_bytes)(uart_bus_t *self, uint8_t *buf, uint32_t max_len);
     void (*write_bytes)(uart_bus_t *self, const uint8_t *buf, uint32_t len);
     HardwareSerial *(*get_HardwareSerial_handle)(uart_bus_t *self);

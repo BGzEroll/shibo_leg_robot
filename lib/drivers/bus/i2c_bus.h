@@ -6,7 +6,8 @@
 
 typedef struct i2c_bus i2c_bus_t;
 
-struct i2c_bus {
+struct i2c_bus
+{
     void (*read_bytes)(i2c_bus_t *self, uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len);
     void (*write_bytes)(i2c_bus_t *self, uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len);
     TwoWire *(*get_TwoWire_handle)(i2c_bus_t *self);

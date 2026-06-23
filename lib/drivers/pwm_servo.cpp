@@ -2,7 +2,7 @@
 
 /**
  * @brief pwm 舵机构造函数
- * 
+ *
  * @param pin 舵机引脚
  * @param channel 舵机通道
  * @param freq 舵机频率
@@ -24,7 +24,7 @@ pwm_servo::pwm_servo(uint8_t pin, uint8_t channel, uint32_t freq, uint8_t resolu
 
 /**
  * @brief 设置舵机角度
- * 
+ *
  * @param angle 舵机角度
  */
 void pwm_servo::set_angle(uint16_t angle)
@@ -39,7 +39,7 @@ void pwm_servo::set_angle(uint16_t angle)
 
 /**
  * @brief 设置舵机脉冲宽度
- * 
+ *
  * @param us 舵机脉冲宽度
  */
 void pwm_servo::set_us(uint16_t us)

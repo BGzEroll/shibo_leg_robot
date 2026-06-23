@@ -101,7 +101,7 @@ static void send_status(uint32_t tick_ms)
     if((send_timer += tick_ms) < 20){return;}
     send_timer = 0;
 
-    balance_core::balance_status status;
+    balance_core::status_snapshot status;
     if(!balance_core::get_status(status)){return;}
 
     uint32_t idx = 0;
@@ -109,12 +109,12 @@ static void send_status(uint32_t tick_ms)
     tx_buf[idx++] = 0xAA;
     idx++;
 
-    put_float(idx, 0x01, status.feedback.pitch_angle);
-    put_float(idx, 0x02, status.feedback.pitch_rate);
-    put_float(idx, 0x03, status.feedback.avg_linear_pos);
-    put_float(idx, 0x04, status.feedback.avg_linear_vel);
-    put_float(idx, 0x05, status.feedback.yaw_angle);
-    put_float(idx, 0x06, status.feedback.yaw_rate);
+    put_float(idx, 0x01, status.pitch_angle);
+    put_float(idx, 0x02, status.pitch_rate);
+    put_float(idx, 0x03, status.avg_linear_pos);
+    put_float(idx, 0x04, status.avg_linear_vel);
+    put_float(idx, 0x05, status.yaw_angle);
+    put_float(idx, 0x06, status.yaw_rate);
     put_float(idx, 0x07, status.input[0]);
     put_float(idx, 0x08, status.input[1]);
     put_float(idx, 0x09, status.feedback_vector[4]);

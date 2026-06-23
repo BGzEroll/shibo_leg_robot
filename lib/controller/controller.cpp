@@ -9,7 +9,7 @@
 static controller::action_state action;
 static controller::leg_runtime leg;
 static controller::control_input input;
-static balance_core::balance_status status;
+static balance_core::status_snapshot status;
 static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
@@ -99,7 +99,8 @@ void controller::update(uint32_t tick_ms)
     update_camera(tick_ms);
 
     controller::action_io ctx{input, status, leg, balance_core::max_linear_vel()};
-    balance_core::balance_command cmd = controller::actions_update(action, ctx, tick_ms);
-    balance_core::set_mode(controller::actions_mode(action));
-    balance_core::set_command(cmd);
+    controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
+
+    balance_core::set_target(request.target);
+    balance_core::set_command(request.command);
 }

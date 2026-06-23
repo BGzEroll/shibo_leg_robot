@@ -3,7 +3,8 @@
 extern HardwareSerial Serial;
 extern HardwareSerial Serial2;
 
-typedef struct uart_bus_ctx {
+typedef struct uart_bus_ctx
+{
     HardwareSerial *uart_handle;
     uint32_t baudrate;
     uint8_t is_init;
@@ -19,7 +20,7 @@ uart_bus_t uart2 = {.ctx = &uart2Ctx};
 
 /**
  * @brief uart 连续读字节
- * 
+ *
  * @return 字节数
  */
 static uint32_t read_bytes(uart_bus_t *self, uint8_t *buf, uint32_t max_len)

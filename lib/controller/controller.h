@@ -3,11 +3,10 @@
 
 #include <Arduino.h>
 
-namespace controller {
-
+namespace controller
+{
 	void init();
 	void update(uint32_t tick_ms);
-
 }
 
 #endif

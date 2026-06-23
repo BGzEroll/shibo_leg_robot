@@ -1,23 +1,21 @@
 #include "led_dev.h"
 
-namespace led_dev {
-
-led board_led(13);
+led led_dev::board_led(13);
 
 static void blink()
 {
-    board_led.on();
+    led_dev::board_led.on();
     delay(50);
-    board_led.off();
+    led_dev::board_led.off();
     delay(950);
 }
 
-void init()
+void led_dev::init()
 {
-    board_led.init();
+    led_dev::board_led.init();
 }
 
-void task(void *arg)
+void led_dev::task(void *arg)
 {
     (void)arg;
 
@@ -25,6 +23,4 @@ void task(void *arg)
     {
         blink();
     }
-}
-
 }

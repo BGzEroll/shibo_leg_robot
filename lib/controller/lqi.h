@@ -3,23 +3,27 @@
 
 #include <Arduino.h>
 
-namespace controller {
-
-	class lqi {
+namespace controller
+{
+	class lqi
+	{
 		public:
-			struct car_model {
+			struct car_model
+			{
 				float r;
 				float base_height;
 				float leg_max_height;
 				float leg_min_height;
 			};
 
-			struct speed_limit {
+			struct speed_limit
+			{
 				float max_linear_vel;
 				float max_steer_vel;
 			};
 
-			struct feedback_state {
+			struct feedback_state
+			{
 				float pitch_angle;
 				float pitch_rate;
 				float avg_linear_pos;
@@ -28,17 +32,20 @@ namespace controller {
 				float yaw_rate;
 			};
 
-			struct reference_state {
+			struct reference_state
+			{
 				float linear_vel;
 				float yaw_rate;
 			};
 
-			struct integral_state {
+			struct integral_state
+			{
 				float linear_vel_error;
 				float yaw_rate_error;
 			};
 
-			struct integral_limit {
+			struct integral_limit
+			{
 				float linear_vel_error;
 				float yaw_rate_error;
 			};
@@ -56,7 +63,6 @@ namespace controller {
 			float gain_poly[12][4];
 			float feedback_gain[2][6];
 	};
-
 }
 
 #endif

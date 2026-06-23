@@ -18,22 +18,22 @@
 #define SERVO_LEFT_MAX 		(SERVO_CENTER + 450)        // 左舵机最高
 #define SERVO_RIGHT_MAX     (SERVO_CENTER - 450)        // 右舵机最高
 
-typedef struct {
+typedef struct
+{
     uint8_t id;
     int16_t position;       // 位置
     int16_t load;       // 负载
 } servoStatus_t;
 
-namespace sts3032 {
+namespace sts3032
+{
+	extern servoStatus_t status[SERVO_NUM];
 
-extern servoStatus_t status[SERVO_NUM];
-
-void init();
-void get_position_and_load();
-void set_torque_switch(uint8_t id, uint8_t type);
-void set(uint8_t id, int16_t position, int16_t speed, uint8_t acc);
-void move();
-
+	void init();
+	void get_position_and_load();
+	void set_torque_switch(uint8_t id, uint8_t type);
+	void set(uint8_t id, int16_t position, int16_t speed, uint8_t acc);
+	void move();
 }
 
 #endif

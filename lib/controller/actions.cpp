@@ -3,15 +3,15 @@
 #include "sts3032.h"
 #include "xbox.h"
 
-using balance_core::balance_command;
-using balance_core::balance_status;
 using controller::action_io;
 using controller::action_state;
+using controller::balance_request;
 using controller::jump_command;
 using controller::leg_runtime;
 using controller::mode_id;
 
-enum phase : uint8_t {
+enum phase : uint8_t
+{
     PREPARE = 0,
     WAIT_SIGNAL,
     INIT,
@@ -96,12 +96,12 @@ static void begin_mode(action_state &state, mode_id mode, jump_command jump = ju
     if(jump == jump_command::TURN_RIGHT){state.jump_turn_dir = -1;}
 }
 
-static bool recover_ready(action_state &state, const balance_status &status, uint32_t tick_ms,
+static bool recover_ready(action_state &state, const balance_core::status_snapshot &status, uint32_t tick_ms,
     float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms)
 {
     state.elapsed += tick_ms;
-    if(fabsf(status.feedback.pitch_angle) < pitch_limit &&
-       fabsf(status.feedback.pitch_rate) < rate_limit)
+    if(fabsf(status.pitch_angle) < pitch_limit &&
+       fabsf(status.pitch_rate) < rate_limit)
     {
         state.ready_timer += tick_ms;
     }
@@ -113,20 +113,20 @@ static bool recover_ready(action_state &state, const balance_status &status, uin
     return state.ready_timer >= hold_ms || state.elapsed >= timeout_ms;
 }
 
-static balance_command recover_command(action_state &state, action_io &ctx)
+static balance_request recover_command(action_state &state, action_io &ctx)
 {
-    balance_command cmd;
-    cmd.enable_balance = true;
-    cmd.enable_motor = true;
-    cmd.recover_active = true;
-    cmd.output_blend = constrain((float)state.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
+    balance_request cmd;
+    cmd.command.enable_balance = true;
+    cmd.command.enable_motor = true;
+    cmd.command.recover_active = true;
+    cmd.command.output_blend = constrain((float)state.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
     run_leg_control(ctx);
     return cmd;
 }
 
-static balance_command update_boot(action_state &state, action_io &ctx, uint32_t tick_ms)
+static balance_request update_boot(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
-    balance_command cmd;
+    balance_request cmd;
     switch(state.phase)
     {
         case PREPARE:
@@ -141,7 +141,7 @@ static balance_command update_boot(action_state &state, action_io &ctx, uint32_t
         case INIT:
             set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
             reset_leg(ctx.leg);
-            cmd.reset_reference = true;
+            cmd.command.reset_reference = true;
             state.phase = INIT_PREPARE;
             break;
 
@@ -151,7 +151,7 @@ static balance_command update_boot(action_state &state, action_io &ctx, uint32_t
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
-                cmd.reset_reference = true;
+                cmd.command.reset_reference = true;
                 state.phase = INIT_RECOVER;
             }
             break;
@@ -160,7 +160,7 @@ static balance_command update_boot(action_state &state, action_io &ctx, uint32_t
             cmd = recover_command(state, ctx);
             if(recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                cmd.reset_reference = true;
+                cmd.command.reset_reference = true;
                 begin_mode(state, mode_id::BALANCE);
             }
             break;
@@ -168,21 +168,21 @@ static balance_command update_boot(action_state &state, action_io &ctx, uint32_t
     return cmd;
 }
 
-static balance_command update_balance(action_state &state, action_io &ctx)
+static balance_request update_balance(action_state &state, action_io &ctx)
 {
-    balance_command cmd;
-    cmd.enable_balance = true;
-    cmd.enable_motor = true;
-    cmd.enable_steering = true;
-    cmd.target_linear_vel = ctx.input.linear_cmd;
-    cmd.target_yaw_rate = ctx.input.yaw_cmd;
+    balance_request cmd;
+    cmd.command.enable_balance = true;
+    cmd.command.enable_motor = true;
+    cmd.command.enable_steering = true;
+    cmd.target.linear_vel = ctx.input.linear_cmd;
+    cmd.target.yaw_rate = ctx.input.yaw_cmd;
     run_leg_control(ctx);
 
     if((ctx.input.pressed_buttons & BTN_LS) &&
        fabsf(ctx.input.linear_cmd) < ctx.max_linear_vel * 0.05f)
     {
         reset_leg(ctx.leg);
-        cmd.reset_reference = true;
+        cmd.command.reset_reference = true;
     }
     if(ctx.input.pressed_buttons & BTN_LB){begin_mode(state, mode_id::SIT);}
     if(ctx.input.pressed_buttons & BTN_RS){begin_mode(state, mode_id::JUMP, jump_command::IN_PLACE);}
@@ -193,9 +193,9 @@ static balance_command update_balance(action_state &state, action_io &ctx)
     return cmd;
 }
 
-static balance_command update_sit(action_state &state, action_io &ctx, uint32_t tick_ms)
+static balance_request update_sit(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
-    balance_command cmd;
+    balance_request cmd;
     switch(state.phase)
     {
         case PREPARE:
@@ -204,11 +204,11 @@ static balance_command update_sit(action_state &state, action_io &ctx, uint32_t 
             break;
 
         case MOVING:
-            cmd.enable_motor = true;
-            cmd.manual_output = true;
-            cmd.manual_left = -0.15f;
-            cmd.manual_right = -0.15f;
-            if(fabsf(ctx.status.feedback.pitch_angle) >= 0.25f || (state.timer += tick_ms) >= 5000)
+            cmd.command.enable_motor = true;
+            cmd.command.direct_output = true;
+            cmd.target.direct_left = -0.15f;
+            cmd.target.direct_right = -0.15f;
+            if(fabsf(ctx.status.pitch_angle) >= 0.25f || (state.timer += tick_ms) >= 5000)
             {
                 state.timer = 0;
                 state.phase = DONE;
@@ -221,7 +221,7 @@ static balance_command update_sit(action_state &state, action_io &ctx, uint32_t 
             {
                 set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
                 reset_leg(ctx.leg);
-                cmd.reset_reference = true;
+                cmd.command.reset_reference = true;
                 state.phase = EXIT_PREPARE;
             }
             break;
@@ -232,7 +232,7 @@ static balance_command update_sit(action_state &state, action_io &ctx, uint32_t 
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
-                cmd.reset_reference = true;
+                cmd.command.reset_reference = true;
                 state.phase = EXIT_RECOVER;
             }
             break;
@@ -241,7 +241,7 @@ static balance_command update_sit(action_state &state, action_io &ctx, uint32_t 
             cmd = recover_command(state, ctx);
             if(recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                cmd.reset_reference = true;
+                cmd.command.reset_reference = true;
                 begin_mode(state, mode_id::BALANCE);
             }
             break;
@@ -249,15 +249,15 @@ static balance_command update_sit(action_state &state, action_io &ctx, uint32_t 
     return cmd;
 }
 
-static balance_command update_jump_command(action_state &state, action_io &ctx)
+static balance_request update_jump_command(action_state &state, action_io &ctx)
 {
-    balance_command cmd;
+    balance_request cmd;
     bool linear_jump = state.jump_linear_dir != 0;
     bool yaw_jump = state.jump_turn_dir != 0 || linear_jump;
-    cmd.enable_balance = true;
-    cmd.enable_motor = true;
-    cmd.enable_steering = yaw_jump;
-    cmd.suppress_yaw_integral = !yaw_jump;
+    cmd.command.enable_balance = true;
+    cmd.command.enable_motor = true;
+    cmd.command.enable_steering = yaw_jump;
+    cmd.command.suppress_yaw_integral = !yaw_jump;
 
     float push_vel = 0.0f;
     uint32_t push_ramp_ms = 80;
@@ -282,10 +282,10 @@ static balance_command update_jump_command(action_state &state, action_io &ctx)
         state.jump_linear_cmd = 0.0f;
     }
 
-    cmd.target_linear_vel = state.jump_linear_cmd;
+    cmd.target.linear_vel = state.jump_linear_cmd;
     if(yaw_jump)
     {
-        float err = angle_error(state.jump_target_yaw, ctx.status.feedback.yaw_angle);
+        float err = angle_error(state.jump_target_yaw, ctx.status.yaw_angle);
         float ff = 0.0f;
         float kp = state.jump_turn_dir == 0 ? 3.0f : 1.0f;
         float max_rate = state.jump_turn_dir == 0 ? 1.8f : 0.6f;
@@ -299,25 +299,25 @@ static balance_command update_jump_command(action_state &state, action_io &ctx)
         }
 
         state.jump_yaw_cmd = constrain((float)state.jump_turn_dir * ff + kp * err, -max_rate, max_rate);
-        cmd.target_yaw_rate = state.jump_yaw_cmd;
+        cmd.target.yaw_rate = state.jump_yaw_cmd;
     }
 
-    if(state.jump_linear_dir == 0 || state.phase != PUSH){cmd.suppress_linear_feedback = true;}
-    if(!yaw_jump){cmd.suppress_yaw_feedback = true;}
+    if(state.jump_linear_dir == 0 || state.phase != PUSH){cmd.command.suppress_linear_feedback = true;}
+    if(!yaw_jump){cmd.command.suppress_yaw_feedback = true;}
     return cmd;
 }
 
-static balance_command update_jump(action_state &state, action_io &ctx, uint32_t tick_ms)
+static balance_request update_jump(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
-    balance_command cmd = update_jump_command(state, ctx);
+    balance_request cmd = update_jump_command(state, ctx);
 
     switch(state.phase)
     {
         case PREPARE:
-            state.jump_target_yaw = wrap_pi(ctx.status.feedback.yaw_angle +
+            state.jump_target_yaw = wrap_pi(ctx.status.yaw_angle +
                                             (float)state.jump_turn_dir * PI * 0.5f);
             set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 450, 250);
-            cmd.reset_yaw_integral = true;
+            cmd.command.reset_yaw_integral = true;
             state.phase = PUSH;
             state.timer = 0;
             break;
@@ -354,8 +354,8 @@ static balance_command update_jump(action_state &state, action_io &ctx, uint32_t
 
         case RECOVER:
             state.elapsed += tick_ms;
-            if(fabsf(ctx.status.feedback.pitch_angle) < 0.18f &&
-               fabsf(ctx.status.feedback.pitch_rate) < 1.6f)
+            if(fabsf(ctx.status.pitch_angle) < 0.18f &&
+               fabsf(ctx.status.pitch_rate) < 1.6f)
             {
                 state.timer += tick_ms;
             }
@@ -366,7 +366,7 @@ static balance_command update_jump(action_state &state, action_io &ctx, uint32_t
 
             if(state.timer >= 80 || state.elapsed >= 350)
             {
-                cmd.reset_yaw_integral = true;
+                cmd.command.reset_yaw_integral = true;
                 begin_mode(state, mode_id::BALANCE);
             }
             break;
@@ -385,13 +385,13 @@ controller::mode_id controller::actions_mode(const action_state &state)
     return state.mode;
 }
 
-balance_core::balance_command controller::actions_update(action_state &state, action_io &ctx, uint32_t tick_ms)
+controller::balance_request controller::actions_update(action_state &state, action_io &ctx, uint32_t tick_ms)
 {
     if(state.mode != mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
     {
         begin_mode(state, mode_id::STOP);
-        balance_command cmd;
-        cmd.reset_reference = true;
+        balance_request cmd;
+        cmd.command.reset_reference = true;
         return cmd;
     }
 
@@ -414,9 +414,9 @@ balance_core::balance_command controller::actions_update(action_state &state, ac
             {
                 begin_mode(state, mode_id::BOOT);
             }
-            return balance_command{};
+            return balance_request{};
 
         default:
-            return balance_command{};
+            return balance_request{};
     }
 }

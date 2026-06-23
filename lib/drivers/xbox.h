@@ -22,7 +22,8 @@
 #define BTN_RIGHT       0x4000
 #define BTN_DOWN        0x8000
 
-class xbox {
+class xbox
+{
     public:
         xbox(const char *mac);
 
@@ -45,7 +46,7 @@ class xbox {
     private:
         xboxCore core;
         xboxReporter reporter;
-    
+
     private:
         void process_notification();
         void update_vibration();
@@ -54,7 +55,8 @@ class xbox {
     private:
         uint8_t was_connected;
 
-        enum class vibration_state_t {
+        enum class vibration_state_t
+        {
             off,
             start,
             trigger

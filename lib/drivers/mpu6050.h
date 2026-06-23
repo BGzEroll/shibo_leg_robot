@@ -5,25 +5,26 @@
 #include <math.h>
 #include <string.h>
 
-class mpu6050 {
+class mpu6050
+{
     public:
         mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef);
 
     public:
         void init(uint8_t cail = 0);
         void update();
-    
+
     public:
         float temperature;
         float acc[3];
         float gyro[3];
         float angle[3];
-    
+
     private:
         i2c_bus_t *i2c;
         uint8_t addr;
         float acc_coef;
-    
+
     private:
         void get_raw();
         void process_data();

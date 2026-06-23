@@ -1,13 +1,12 @@
 #include "sts3032.h"
 
-namespace sts3032 {
-
 #define INST_SYNC_READ      0x82
 #define INST_SYNC_WRITE     0x83
 #define INST_WRITE_DATA     0x03
 #define SMS_STS_ACC         0x29
 
-typedef struct servoCmdPacket {
+typedef struct servoCmdPacket
+{
     uint8_t id;
     int16_t position;
     int16_t speed;
@@ -17,12 +16,12 @@ typedef struct servoCmdPacket {
 static uart_bus_t *pUart = &uart2;
 static servoCmdPacket_t packet[SERVO_NUM];      // [0] 为左舵机，[1] 为右舵机
 static servoCmdPacket_t lastState[SERVO_NUM];       // 记录上一次的舵机目标参数
-servoStatus_t status[SERVO_NUM];
+servoStatus_t sts3032::status[SERVO_NUM];
 static uint8_t txBuf[128], txLen = 0;       // 发送缓冲区
 
 /**
  * @brief 将数据写入舵机发送缓冲区
- * 
+ *
  * @param data 指向要写入的数据缓冲区
  * @param len 数据长度（字节数）
  * @return 当前缓冲区长度
@@ -56,7 +55,7 @@ static void wFlush(void)
 
 /**
  * @brief 交换 int16_t 数据的高低字节
- * 
+ *
  * @param dataL 低字节存放指针
  * @param dataH 高字节存放指针
  * @param data 要交换的 int16_t 数据
@@ -69,13 +68,13 @@ static void swapByte(uint8_t *dataL, uint8_t *dataH, int16_t data)
 
 /**
  * @brief STS 舵机同步读
- * 
+ *
  * @param ids 要读取的舵机 id 数组
  * @param servoNum 舵机数量
  * @param startReg 起始地址
  * @param len 读取到字节数
  */
-void syncRead(uint8_t *ids, uint8_t servoNum, uint8_t startReg, uint8_t len)
+static void syncRead(uint8_t *ids, uint8_t servoNum, uint8_t startReg, uint8_t len)
 {
     uint8_t cmd[10];
     uint8_t idx = 0;
@@ -104,7 +103,7 @@ void syncRead(uint8_t *ids, uint8_t servoNum, uint8_t startReg, uint8_t len)
 
 /**
  * @brief STS 舵机同步写
- * 
+ *
  * @param idNum 要写入的舵机数量
  * @param memAddr 内存表起始地址
  * @param nData 每个舵机的数据缓冲区
@@ -147,7 +146,7 @@ static void syncWrite(uint8_t idNum, uint8_t memAddr, uint8_t *nData, uint8_t nL
 
 /**
  * @brief STS 舵机设定姿态，构建每舵机数据包并调用同步写
- * 
+ *
  * @param idNum 要操作的舵机数量
  */
 static void syncWritePosEx(uint8_t idNum)
@@ -210,7 +209,7 @@ static int32_t parseSyncRead(uint8_t *ids, uint8_t n, servoStatus_t *status)
 /**
  * @brief 获取左右腿舵机的位置和负载信息
  */
-void get_position_and_load()
+void sts3032::get_position_and_load()
 {
     uint8_t ids[] = {SERVO_LEFT, SERVO_RIGHT};
 
@@ -220,11 +219,11 @@ void get_position_and_load()
 
 /**
  * @brief 配置扭矩开关选项
- * 
+ *
  * @param id 舵机 id
  * @param type 0 是关闭扭矩输出，1 是打开扭矩输出，2 是打开阻尼输出，128 是中位校准
  */
-void set_torque_switch(uint8_t id, uint8_t type)
+void sts3032::set_torque_switch(uint8_t id, uint8_t type)
 {
     uint8_t cmd[8];
     uint8_t idx = 0;
@@ -251,13 +250,13 @@ void set_torque_switch(uint8_t id, uint8_t type)
 
 /**
  * @brief 设置单个舵机参数
- * 
+ *
  * @param id 舵机 id
  * @param position 目标位置
  * @param speed 速度
  * @param acc 加速度
  */
-void set(uint8_t id, int16_t position, int16_t speed, uint8_t acc)
+void sts3032::set(uint8_t id, int16_t position, int16_t speed, uint8_t acc)
 {
     servoCmdPacket_t *p;
 
@@ -273,7 +272,7 @@ void set(uint8_t id, int16_t position, int16_t speed, uint8_t acc)
 /**
  * @brief 移动舵机
  */
-void move()
+void sts3032::move()
 {
     for(uint8_t i = 0; i < SERVO_NUM; i++)
     {
@@ -286,7 +285,7 @@ void move()
     }
 }
 
-void init()
+void sts3032::init()
 {
     uart_bus_init(pUart);
 
@@ -298,6 +297,4 @@ void init()
 
     set_torque_switch(SERVO_LEFT, 128);
     set_torque_switch(SERVO_RIGHT, 128);
-}
-
 }
