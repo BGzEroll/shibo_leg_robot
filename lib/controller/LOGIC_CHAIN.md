@@ -65,18 +65,19 @@ balance_core::control_task_entry()
 
 1. `led_dev::init()` 初始化板载 LED。
 2. `xbox_dev::init()` 初始化 Xbox 输入队列和手柄对象。
-3. `host_comm::init()` 初始化 UART0 和 host remote 输入队列。
-4. `balance_core::init()` 初始化平衡核心状态队列，并初始化 `sts3032`、`mpu6050_dev`、`motor`。
-5. `controller::init()` 初始化上层动作状态机和腿部运行状态。
-6. `task_list()` 创建所有任务。
+3. `controller::init()` 初始化控制器内部链路：
+   - `host_comm::init()` 初始化 UART0 和 host remote 输入队列。
+   - `balance_core::init()` 初始化平衡核心状态队列，并初始化 `sts3032`、`mpu6050_dev`、`motor`。
+   - 初始化上层动作状态机和腿部运行状态。
+4. `task_list()` 创建所有任务。
 
 任务分布：
 
-- `led_dev::task`：低优先级 LED 闪烁。
-- `xbox_dev::task`：20 ms 采样一次手柄，发布 `xbox_dev::data`。
+- `led_dev::task_entry`：低优先级 LED 闪烁。
+- `xbox_dev::task_entry`：20 ms 采样一次手柄，发布 `xbox_dev::data`。
 - `balance_core::core_task_entry`：core 1 高频 IO 任务，负责 FOC、move、encoder、IMU。
 - `balance_core::control_task_entry`：core 0 1 kHz 控制任务，负责上层更新和平衡算法。
-- `host_comm::task`：1 kHz host 串口收发。
+- `host_comm::task_entry`：1 kHz host 串口收发。
 
 ## 高频 IO 任务
 
@@ -157,7 +158,7 @@ balance_core::set_command(request.command);
    - 从 `mpu6050_dev::queue()` 读 IMU 快照。
    - 从 `motor::encoder_queue()` 读 encoder 快照。
    - 用 `servo_count_to_height()` 把舵机位置转换成腿长。
-3. `update_state()` 把 IMU 和 encoder 快照写入 `core.plant.state`。
+3. `update_state()` 把 IMU 和 encoder 快照写入 `lqi::state`。
 4. `update_gain()` 根据平均腿长更新 LQI feedback gain。
 5. 根据命令处理 reset：
    - `reset_reference` 清空线速度/yaw 参考和积分。
@@ -203,7 +204,7 @@ balance_core::set_command(request.command);
 
 ## Host 链路
 
-`host_comm::task()` 每 1 ms 执行：
+`host_comm::task_entry()` 每 1 ms 执行：
 
 1. `update_rx()` 从 UART0 读数据。
 2. `parse_rx()` 查找 `0xFF 0xAA` 帧头。

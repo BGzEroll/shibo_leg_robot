@@ -18,7 +18,7 @@ void xbox_dev::init()
     xbox_data_queue = xQueueCreate(1, sizeof(xbox_dev::data));
 }
 
-void xbox_dev::task(void *arg)
+void xbox_dev::task_entry(void *arg)
 {
     (void)arg;
 

@@ -15,7 +15,7 @@ void led_dev::init()
     led_dev::board_led.init();
 }
 
-void led_dev::task(void *arg)
+void led_dev::task_entry(void *arg)
 {
     (void)arg;
 

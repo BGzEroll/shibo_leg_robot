@@ -5,6 +5,11 @@
 #include "esp_timer.h"
 #include "freertos/task.h"
 
+namespace host_comm
+{
+	void init();
+}
+
 static QueueHandle_t rx_queue = nullptr;
 static uint8_t rx_buf[256];
 static uint32_t rx_len = 0;
@@ -129,7 +134,7 @@ static void send_status(uint32_t tick_ms)
     uart0.write_bytes(&uart0, tx_buf, idx);
 }
 
-void host_comm::task(void *arg)
+void host_comm::task_entry(void *arg)
 {
     (void)arg;
     TickType_t last_wake_time = xTaskGetTickCount();

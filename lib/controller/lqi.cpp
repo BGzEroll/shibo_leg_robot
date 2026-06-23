@@ -1,5 +1,10 @@
 #include "lqi.h"
 
+namespace lqi
+{
+	void init();
+}
+
 static const float lqi_gain_poly[12][4] = {
     { -19.78318794f,  2.96741131f, -3.67412914f, -3.30769108f},
     {  45.57101193f, -13.86222792f, -0.81410746f, -0.10765136f},
@@ -15,7 +20,16 @@ static const float lqi_gain_poly[12][4] = {
     { -0.00000000f,  0.00000000f, -0.00000000f, -0.33502155f}
 };
 
-controller::lqi::lqi()
+lqi::car_model lqi::car;
+lqi::speed_limit lqi::limit;
+lqi::feedback_state lqi::state;
+lqi::reference_state lqi::ref;
+lqi::integral_state lqi::integral;
+lqi::integral_limit lqi::integral_clamp;
+float lqi::gain_poly[12][4];
+float lqi::feedback_gain[2][6];
+
+void lqi::init()
 {
     car.r = 0.0526f / 2.0f;
     car.base_height = 0.03f;

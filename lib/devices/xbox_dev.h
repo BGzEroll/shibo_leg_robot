@@ -16,7 +16,7 @@ namespace xbox_dev
 
 	QueueHandle_t queue();
 	void init();
-	void task(void *arg);
+	void task_entry(void *arg);
 }
 
 #endif

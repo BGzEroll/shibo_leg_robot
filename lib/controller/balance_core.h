@@ -49,14 +49,17 @@ namespace balance_core
 		float avg_leg_height = 0.0f;
 	};
 
-	void init();
+	struct info_t
+	{
+		float max_linear_vel = 0.0f;
+		float max_steer_vel = 0.0f;
+		float wheel_radius = 0.0f;
+	};
+
 	void set_target(const target_t &target);
 	void set_command(const command_t &command);
 	bool get_status(status_snapshot &out);
-
-	float max_linear_vel();
-	float max_steer_vel();
-	float wheel_radius();
+	info_t get_info();
 
 	void core_task_entry(void *arg);
 	void control_task_entry(void *arg);

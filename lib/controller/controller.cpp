@@ -6,10 +6,21 @@
 #include "ptk7350.h"
 #include "xbox_dev.h"
 
+namespace balance_core
+{
+	void init();
+}
+
+namespace host_comm
+{
+	void init();
+}
+
 static controller::action_state action;
 static controller::leg_runtime leg;
 static controller::control_input input;
 static balance_core::status_snapshot status;
+static balance_core::info_t balance_info;
 static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
@@ -57,9 +68,9 @@ static void sample_input()
     float linear_axis = apply_deadband(input.axes[3], 0.05f);
     float yaw_axis = apply_deadband(input.axes[0], 0.05f);
 
-    input.linear_cmd = linear_axis * balance_core::max_linear_vel();
+    input.linear_cmd = linear_axis * balance_info.max_linear_vel;
     if(linear_axis < 0.0f){input.linear_cmd *= 0.8f;}
-    input.yaw_cmd = -yaw_axis * balance_core::max_steer_vel();
+    input.yaw_cmd = -yaw_axis * balance_info.max_steer_vel;
 }
 
 static void update_camera(uint32_t tick_ms)
@@ -88,6 +99,9 @@ static void update_camera(uint32_t tick_ms)
 
 void controller::init()
 {
+    host_comm::init();
+    balance_core::init();
+    balance_info = balance_core::get_info();
     controller::actions_init(action);
     leg = controller::leg_runtime{};
 }
@@ -98,7 +112,7 @@ void controller::update(uint32_t tick_ms)
     sample_input();
     update_camera(tick_ms);
 
-    controller::action_io ctx{input, status, leg, balance_core::max_linear_vel()};
+    controller::action_io ctx{input, status, leg, balance_info.max_linear_vel};
     controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
 
     balance_core::set_target(request.target);

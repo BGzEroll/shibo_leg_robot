@@ -8,7 +8,7 @@ namespace led_dev
 	extern led board_led;
 
 	void init();
-	void task(void *arg);
+	void task_entry(void *arg);
 }
 
 #endif

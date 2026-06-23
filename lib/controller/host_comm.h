@@ -14,9 +14,8 @@ namespace host_comm
 		float axes[6]{};
 	};
 
-	void init();
 	QueueHandle_t remote_queue();
-	void task(void *arg);
+	void task_entry(void *arg);
 }
 
 #endif
