@@ -42,7 +42,11 @@ controller::balance_request controller::actions::update_sit(action_state &state,
 
         case action::DONE:
             cmd.command.reset_reference = true;
-            if(ctx.input.buttons & BTN_LS){set_torque(0);}
+            if((state.timer += tick_ms) >= 10000 || (ctx.input.buttons & BTN_LS))
+            {
+                set_torque(0);
+                state.timer = 10000;
+            }
             if(ctx.input.buttons & BTN_RB)
             {
                 set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
