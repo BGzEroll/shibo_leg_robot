@@ -1,118 +1,17 @@
 #include "actions.h"
 
-#include "sts3032.h"
+#include "actions/action_common.h"
+#include "actions/action_jump.h"
+#include "actions/action_sit.h"
 #include "xbox.h"
+
+namespace action = controller::actions;
 
 using controller::action_io;
 using controller::action_state;
 using controller::balance_request;
 using controller::jump_command;
-using controller::leg_runtime;
 using controller::mode_id;
-
-enum phase : uint8_t
-{
-    PREPARE = 0,
-    WAIT_SIGNAL,
-    INIT,
-    INIT_PREPARE,
-    INIT_RECOVER,
-    MOVING,
-    DONE,
-    EXIT_PREPARE,
-    EXIT_RECOVER,
-    PUSH,
-    FLY,
-    LAND,
-    RECOVER
-};
-
-/**
- * @brief 将角度归一化到 -PI 到 PI 范围内
- *
- * @param angle 角度值
- *
- * @return 计算结果
- */
-static float wrap_pi(float angle)
-{
-    while(angle > PI){angle -= 2.0f * PI;}
-    while(angle < -PI){angle += 2.0f * PI;}
-    return angle;
-}
-
-/**
- * @brief 计算目标角度和当前角度之间的最短误差
- *
- * @param target 目标值
- * @param current 当前值
- *
- * @return 计算结果
- */
-static float angle_error(float target, float current)
-{
-    return wrap_pi(target - current);
-}
-
-/**
- * @brief 设置左右腿舵机目标姿态并触发同步移动
- *
- * @param left 左侧目标值
- * @param right 右侧目标值
- * @param speed 舵机速度
- * @param accel 舵机加速度
- */
-static void set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel)
-{
-    sts3032::set(SERVO_LEFT, left, speed, accel);
-    sts3032::set(SERVO_RIGHT, right, speed, accel);
-    sts3032::move();
-}
-
-/**
- * @brief 设置左右腿舵机扭矩模式
- *
- * @param type 扭矩模式类型
- */
-static void set_torque(uint8_t type)
-{
-    sts3032::set_torque_switch(SERVO_LEFT, type);
-    sts3032::set_torque_switch(SERVO_RIGHT, type);
-}
-
-/**
- * @brief 复位腿部运行状态和横滚 PID
- *
- * @param leg 腿部运行状态
- */
-static void reset_leg(leg_runtime &leg)
-{
-    leg.roll_adjust = 0.0f;
-    leg.height_base = (float)LEG_HEIGHT_BASE;
-    leg.reset_roll_pid();
-}
-
-/**
- * @brief 根据输入和横滚姿态更新腿部舵机控制
- *
- * @param ctx 动作输入输出上下文
- */
-static void run_leg_control(action_io &ctx)
-{
-    if((ctx.input.buttons & BTN_RIGHT) && !(ctx.input.buttons & ~BTN_RIGHT)){ctx.leg.roll_adjust += 0.025f;}
-    if((ctx.input.buttons & BTN_LEFT) && !(ctx.input.buttons & ~BTN_LEFT)){ctx.leg.roll_adjust -= 0.025f;}
-    if((ctx.input.buttons & BTN_UP) && !(ctx.input.buttons & ~BTN_UP)){ctx.leg.height_base -= 0.025f;}
-    if((ctx.input.buttons & BTN_DOWN) && !(ctx.input.buttons & ~BTN_DOWN)){ctx.leg.height_base += 0.025f;}
-
-    float roll_angle = ctx.leg.roll_lpf(ctx.status.roll_angle / (float)PI * 180.0f);
-    float leg_add = ctx.leg.roll_pid(roll_angle - ctx.leg.roll_adjust);
-    int16_t left = (int16_t)(2048.0f + 8.4f * (30.0f - ctx.leg.height_base) - leg_add);
-    int16_t right = (int16_t)(2048.0f - 8.4f * (30.0f - ctx.leg.height_base) - leg_add);
-
-    left = constrain(left, SERVO_LEFT_MIN, SERVO_LEFT_MAX);
-    right = constrain(right, SERVO_RIGHT_MAX, SERVO_RIGHT_MIN);
-    set_pose(left, right, 1000, 0);
-}
 
 /**
  * @brief 切换动作模式并初始化该模式的运行状态
@@ -121,73 +20,21 @@ static void run_leg_control(action_io &ctx)
  * @param mode 目标动作模式
  * @param jump 跳跃动作类型
  */
-static void begin_mode(action_state &state, mode_id mode, jump_command jump = jump_command::IN_PLACE)
+void controller::actions::begin_mode(action_state &state, mode_id mode, jump_command jump)
 {
     state.mode = mode;
-    state.phase = PREPARE;
+    state.phase = action::PREPARE;
     state.timer = 0;
     state.ready_timer = 0;
     state.elapsed = 0;
-    state.jump_linear_cmd = 0.0f;
-    state.jump_yaw_cmd = 0.0f;
+    state.jump = jump_runtime{};
 
     if(mode != mode_id::JUMP){return;}
 
-    state.jump_linear_dir = 0;
-    state.jump_turn_dir = 0;
-    if(jump == jump_command::FORWARD){state.jump_linear_dir = 1;}
-    if(jump == jump_command::BACKWARD){state.jump_linear_dir = -1;}
-    if(jump == jump_command::TURN_LEFT){state.jump_turn_dir = 1;}
-    if(jump == jump_command::TURN_RIGHT){state.jump_turn_dir = -1;}
-}
-
-/**
- * @brief 判断恢复阶段是否已经满足稳定条件或等待超时
- *
- * @param state 动作状态机状态
- * @param status 状态快照
- * @param tick_ms 本次更新周期，单位毫秒
- * @param pitch_limit 俯仰角允许阈值
- * @param rate_limit 俯仰角速度允许阈值
- * @param hold_ms 稳定保持时间，单位毫秒
- * @param timeout_ms 恢复等待超时时间，单位毫秒
- *
- * @return 已经可以退出恢复阶段时返回 true
- */
-static bool recover_ready(action_state &state, const balance_core::status_snapshot &status, uint32_t tick_ms,
-    float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms)
-{
-    state.elapsed += tick_ms;
-    if(fabsf(status.pitch_angle) < pitch_limit &&
-       fabsf(status.pitch_rate) < rate_limit)
-    {
-        state.ready_timer += tick_ms;
-    }
-    else
-    {
-        state.ready_timer = 0;
-    }
-
-    return state.ready_timer >= hold_ms || state.elapsed >= timeout_ms;
-}
-
-/**
- * @brief 生成恢复阶段使用的平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- *
- * @return 生成的平衡请求
- */
-static balance_request recover_command(action_state &state, action_io &ctx)
-{
-    balance_request cmd;
-    cmd.command.enable_balance = true;
-    cmd.command.enable_motor = true;
-    cmd.command.recover_active = true;
-    cmd.command.output_blend = constrain((float)state.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
-    run_leg_control(ctx);
-    return cmd;
+    if(jump == jump_command::FORWARD){state.jump.linear_dir = 1;}
+    if(jump == jump_command::BACKWARD){state.jump.linear_dir = -1;}
+    if(jump == jump_command::TURN_LEFT){state.jump.turn_dir = 1;}
+    if(jump == jump_command::TURN_RIGHT){state.jump.turn_dir = -1;}
 }
 
 /**
@@ -204,39 +51,39 @@ static balance_request update_boot(action_state &state, action_io &ctx, uint32_t
     balance_request cmd;
     switch(state.phase)
     {
-        case PREPARE:
-            set_torque(0);
-            state.phase = WAIT_SIGNAL;
+        case action::PREPARE:
+            action::set_torque(0);
+            state.phase = action::WAIT_SIGNAL;
             break;
 
-        case WAIT_SIGNAL:
-            if(ctx.input.buttons & BTN_RB){state.phase = INIT;}
+        case action::WAIT_SIGNAL:
+            if(ctx.input.buttons & BTN_RB){state.phase = action::INIT;}
             break;
 
-        case INIT:
-            set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
-            reset_leg(ctx.leg);
+        case action::INIT:
+            action::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+            action::reset_leg(ctx.leg);
             cmd.command.reset_reference = true;
-            state.phase = INIT_PREPARE;
+            state.phase = action::INIT_PREPARE;
             break;
 
-        case INIT_PREPARE:
+        case action::INIT_PREPARE:
             if((state.timer += tick_ms) >= 350)
             {
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
                 cmd.command.reset_reference = true;
-                state.phase = INIT_RECOVER;
+                state.phase = action::INIT_RECOVER;
             }
             break;
 
-        case INIT_RECOVER:
-            cmd = recover_command(state, ctx);
-            if(recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
+        case action::INIT_RECOVER:
+            cmd = action::recover_command(state, ctx);
+            if(action::recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
                 cmd.command.reset_reference = true;
-                begin_mode(state, mode_id::BALANCE);
+                action::begin_mode(state, mode_id::BALANCE);
             }
             break;
     }
@@ -259,233 +106,20 @@ static balance_request update_balance(action_state &state, action_io &ctx)
     cmd.command.enable_steering = true;
     cmd.target.linear_vel = ctx.input.linear_cmd;
     cmd.target.yaw_rate = ctx.input.yaw_cmd;
-    run_leg_control(ctx);
+    action::run_leg_control(ctx);
 
     if((ctx.input.pressed_buttons & BTN_LS) &&
        fabsf(ctx.input.linear_cmd) < ctx.max_linear_vel * 0.05f)
     {
-        reset_leg(ctx.leg);
+        action::reset_leg(ctx.leg);
         cmd.command.reset_reference = true;
     }
-    if(ctx.input.pressed_buttons & BTN_LB){begin_mode(state, mode_id::SIT);}
-    if(ctx.input.pressed_buttons & BTN_RS){begin_mode(state, mode_id::JUMP, jump_command::IN_PLACE);}
-    if(ctx.input.pressed_buttons & BTN_Y){begin_mode(state, mode_id::JUMP, jump_command::FORWARD);}
-    if(ctx.input.pressed_buttons & BTN_A){begin_mode(state, mode_id::JUMP, jump_command::BACKWARD);}
-    if(ctx.input.pressed_buttons & BTN_X){begin_mode(state, mode_id::JUMP, jump_command::TURN_LEFT);}
-    if(ctx.input.pressed_buttons & BTN_B){begin_mode(state, mode_id::JUMP, jump_command::TURN_RIGHT);}
-    return cmd;
-}
-
-/**
- * @brief 更新 SIT 模式状态机并生成平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
- */
-static balance_request update_sit(action_state &state, action_io &ctx, uint32_t tick_ms)
-{
-    balance_request cmd;
-    switch(state.phase)
-    {
-        case PREPARE:
-            set_torque(2);
-            state.timer = 0;
-            state.phase = MOVING;
-            break;
-
-        case MOVING:
-            state.timer += tick_ms;
-            if(fabsf(ctx.status.pitch_angle) >= 0.25f || state.timer >= 700)
-            {
-                state.timer = 0;
-                cmd.command.reset_reference = true;
-                state.phase = DONE;
-                break;
-            }
-            cmd.command.enable_motor = true;
-            cmd.command.direct_output = true;
-            cmd.target.direct_left = -0.15f;
-            cmd.target.direct_right = -0.15f;
-            break;
-
-        case DONE:
-            cmd.command.reset_reference = true;
-            if(ctx.input.buttons & BTN_LS){set_torque(0);}
-            if(ctx.input.buttons & BTN_RB)
-            {
-                set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
-                reset_leg(ctx.leg);
-                cmd.command.reset_reference = true;
-                state.phase = EXIT_PREPARE;
-            }
-            break;
-
-        case EXIT_PREPARE:
-            if((state.timer += tick_ms) >= 350)
-            {
-                state.timer = 0;
-                state.elapsed = 0;
-                state.ready_timer = 0;
-                cmd.command.reset_reference = true;
-                state.phase = EXIT_RECOVER;
-            }
-            break;
-
-        case EXIT_RECOVER:
-            cmd = recover_command(state, ctx);
-            if(recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
-            {
-                cmd.command.reset_reference = true;
-                begin_mode(state, mode_id::BALANCE);
-            }
-            break;
-    }
-    return cmd;
-}
-
-/**
- * @brief 根据跳跃阶段生成跳跃过程中的平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- *
- * @return 生成的平衡请求
- */
-static balance_request update_jump_command(action_state &state, action_io &ctx)
-{
-    balance_request cmd;
-    bool linear_jump = state.jump_linear_dir != 0;
-    bool yaw_jump = state.jump_turn_dir != 0 || linear_jump;
-    cmd.command.enable_balance = true;
-    cmd.command.enable_motor = true;
-    cmd.command.enable_steering = yaw_jump;
-    cmd.command.suppress_yaw_integral = !yaw_jump;
-
-    float push_vel = 0.0f;
-    uint32_t push_ramp_ms = 80;
-    if(state.jump_linear_dir > 0)
-    {
-        push_vel = min(ctx.max_linear_vel, 0.40f);
-        push_ramp_ms = 160;
-    }
-    else if(state.jump_linear_dir < 0)
-    {
-        push_vel = min(ctx.max_linear_vel, 0.34f);
-        push_ramp_ms = 240;
-    }
-
-    if(state.phase == PUSH)
-    {
-        float ramp = constrain((float)state.timer / (float)push_ramp_ms, 0.0f, 1.0f);
-        state.jump_linear_cmd = (float)state.jump_linear_dir * push_vel * ramp;
-    }
-    else
-    {
-        state.jump_linear_cmd = 0.0f;
-    }
-
-    cmd.target.linear_vel = state.jump_linear_cmd;
-    if(yaw_jump)
-    {
-        float err = angle_error(state.jump_target_yaw, ctx.status.yaw_angle);
-        float ff = 0.0f;
-        float kp = state.jump_turn_dir == 0 ? 3.0f : 1.0f;
-        float max_rate = state.jump_turn_dir == 0 ? 1.8f : 0.6f;
-
-        if(state.jump_turn_dir != 0)
-        {
-            if(state.phase == PUSH){ff = 1.2f; kp = 1.4f; max_rate = 1.8f;}
-            if(state.phase == FLY){ff = 6.4f; kp = 2.0f; max_rate = 6.4f;}
-            if(state.phase == LAND){kp = 0.35f; max_rate = 0.4f;}
-            if(state.phase == RECOVER){kp = 0.8f; max_rate = 0.5f;}
-        }
-
-        state.jump_yaw_cmd = constrain((float)state.jump_turn_dir * ff + kp * err, -max_rate, max_rate);
-        cmd.target.yaw_rate = state.jump_yaw_cmd;
-    }
-
-    if(state.jump_linear_dir == 0 || state.phase != PUSH){cmd.command.suppress_linear_feedback = true;}
-    if(!yaw_jump){cmd.command.suppress_yaw_feedback = true;}
-    return cmd;
-}
-
-/**
- * @brief 更新 JUMP 模式状态机并生成平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
- */
-static balance_request update_jump(action_state &state, action_io &ctx, uint32_t tick_ms)
-{
-    balance_request cmd = update_jump_command(state, ctx);
-
-    switch(state.phase)
-    {
-        case PREPARE:
-            state.jump_target_yaw = wrap_pi(ctx.status.yaw_angle +
-                                            (float)state.jump_turn_dir * PI * 0.5f);
-            set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 450, 250);
-            cmd.command.reset_yaw_integral = true;
-            state.phase = PUSH;
-            state.timer = 0;
-            break;
-
-        case PUSH:
-        {
-            uint32_t wait_ms = state.jump_linear_dir > 0 ? 650 : (state.jump_linear_dir < 0 ? 700 : 200);
-            if((state.timer += tick_ms) >= wait_ms)
-            {
-                set_pose(SERVO_LEFT_MAX + 20, SERVO_RIGHT_MAX - 20, 0, 0);
-                state.timer = 0;
-                state.phase = FLY;
-            }
-            break;
-        }
-
-        case FLY:
-            if((state.timer += tick_ms) >= 130)
-            {
-                set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 0, 0);
-                state.timer = 0;
-                state.phase = LAND;
-            }
-            break;
-
-        case LAND:
-            if((state.timer += tick_ms) >= 260)
-            {
-                state.timer = 0;
-                state.elapsed = 0;
-                state.phase = RECOVER;
-            }
-            break;
-
-        case RECOVER:
-            state.elapsed += tick_ms;
-            if(fabsf(ctx.status.pitch_angle) < 0.18f &&
-               fabsf(ctx.status.pitch_rate) < 1.6f)
-            {
-                state.timer += tick_ms;
-            }
-            else
-            {
-                state.timer = 0;
-            }
-
-            if(state.timer >= 80 || state.elapsed >= 350)
-            {
-                cmd.command.reset_yaw_integral = true;
-                begin_mode(state, mode_id::BALANCE);
-            }
-            break;
-    }
-
+    if(ctx.input.pressed_buttons & BTN_LB){action::begin_mode(state, mode_id::SIT);}
+    if(ctx.input.pressed_buttons & BTN_RS){action::begin_mode(state, mode_id::JUMP, jump_command::IN_PLACE);}
+    if(ctx.input.pressed_buttons & BTN_Y){action::begin_mode(state, mode_id::JUMP, jump_command::FORWARD);}
+    if(ctx.input.pressed_buttons & BTN_A){action::begin_mode(state, mode_id::JUMP, jump_command::BACKWARD);}
+    if(ctx.input.pressed_buttons & BTN_X){action::begin_mode(state, mode_id::JUMP, jump_command::TURN_LEFT);}
+    if(ctx.input.pressed_buttons & BTN_B){action::begin_mode(state, mode_id::JUMP, jump_command::TURN_RIGHT);}
     return cmd;
 }
 
@@ -496,7 +130,7 @@ static balance_request update_jump(action_state &state, action_io &ctx, uint32_t
  */
 void controller::actions_init(action_state &state)
 {
-    begin_mode(state, mode_id::BOOT);
+    action::begin_mode(state, mode_id::BOOT);
 }
 
 /**
@@ -524,7 +158,7 @@ controller::balance_request controller::actions_update(action_state &state, acti
 {
     if(state.mode != mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
     {
-        begin_mode(state, mode_id::STOP);
+        action::begin_mode(state, mode_id::STOP);
         balance_request cmd;
         cmd.command.reset_reference = true;
         return cmd;
@@ -539,15 +173,15 @@ controller::balance_request controller::actions_update(action_state &state, acti
             return update_balance(state, ctx);
 
         case mode_id::SIT:
-            return update_sit(state, ctx, tick_ms);
+            return action::update_sit(state, ctx, tick_ms);
 
         case mode_id::JUMP:
-            return update_jump(state, ctx, tick_ms);
+            return action::update_jump(state, ctx, tick_ms);
 
         case mode_id::STOP:
             if(ctx.input.buttons & BTN_RB)
             {
-                begin_mode(state, mode_id::BOOT);
+                action::begin_mode(state, mode_id::BOOT);
             }
             return balance_request{};
 

@@ -63,6 +63,15 @@ namespace controller
 		float max_linear_vel;
 	};
 
+	struct jump_runtime
+	{
+		int8_t linear_dir = 0;
+		int8_t turn_dir = 0;
+		float target_yaw = 0.0f;
+		float linear_cmd = 0.0f;
+		float yaw_cmd = 0.0f;
+	};
+
 	struct action_state
 	{
 		mode_id mode = mode_id::BOOT;
@@ -70,11 +79,7 @@ namespace controller
 		uint32_t timer = 0;
 		uint32_t ready_timer = 0;
 		uint32_t elapsed = 0;
-		int8_t jump_linear_dir = 0;
-		int8_t jump_turn_dir = 0;
-		float jump_target_yaw = 0.0f;
-		float jump_linear_cmd = 0.0f;
-		float jump_yaw_cmd = 0.0f;
+		jump_runtime jump;
 	};
 
 	void actions_init(action_state &state);
