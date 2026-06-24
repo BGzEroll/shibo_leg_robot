@@ -4,21 +4,18 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-typedef struct i2c_bus i2c_bus_t;
+class i2c_bus {
+    public:
+        explicit i2c_bus(uint8_t bus_id = 0);
 
-struct i2c_bus
-{
-    void (*read_bytes)(i2c_bus_t *self, uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len);
-    void (*write_bytes)(i2c_bus_t *self, uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len);
-    TwoWire *(*get_TwoWire_handle)(i2c_bus_t *self);
+    public:
+        void init();
+        void read_bytes(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len);
+        void write_bytes(uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len);
+        TwoWire *get_TwoWire_handle() const;
 
-    // 上下文
-    void * const ctx;
+    private:
+        uint8_t bus_id;
 };
-
-extern i2c_bus_t i2c1;
-extern i2c_bus_t i2c2;
-
-void i2c_bus_init(i2c_bus_t *self);
 
 #endif

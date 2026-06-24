@@ -1,6 +1,7 @@
 #include "mpu6050_dev.h"
 
-mpu6050 mpu6050_dev::imu(&i2c2, 0x68, 0.02f);
+static i2c_bus imu_i2c(1);
+mpu6050 mpu6050_dev::imu(imu_i2c, 0x68, 0.02f);
 static QueueHandle_t mpu6050_data_queue = nullptr;
 
 /**

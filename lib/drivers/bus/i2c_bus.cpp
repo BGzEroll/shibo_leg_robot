@@ -1,95 +1,131 @@
 #include "i2c_bus.h"
 
-static TwoWire wire_1 = TwoWire(0);
-static TwoWire wire_2 = TwoWire(1);
+static TwoWire wire_0 = TwoWire(0);
+static TwoWire wire_1 = TwoWire(1);
 
-typedef struct i2c_bus_ctx
-{
-    TwoWire *i2c_handle;
-    uint8_t scl_pin;
-    uint8_t sda_pin;
-    uint32_t frequency;
-    uint8_t is_init;
-} i2c_bus_ctx_t;
+class i2c_dev {
+    public:
+        i2c_dev(uint8_t i2c_num, uint8_t scl_pin, uint8_t sda_pin, uint32_t freq)
+            : i2c_num(i2c_num),
+              scl_pin(scl_pin),
+              sda_pin(sda_pin),
+              freq(freq)
+        {
+            switch(i2c_num)
+            {
+                case 0: wire = &wire_0; break;
+                case 1: wire = &wire_1; break;
+                default: wire = nullptr; break;
+            }
+        }
 
-// i2c1 实例
-static i2c_bus_ctx_t i2c1Ctx = {.i2c_handle = &wire_1, .scl_pin = 18, .sda_pin = 19, .frequency = 400000};
-i2c_bus_t i2c1 = {.ctx = &i2c1Ctx};
+        void init()
+        {
+            if(is_init || !wire){return;}
+            is_init = true;
+            wire->begin(sda_pin, scl_pin, freq);
+        }
 
-// i2c2 实例
-static i2c_bus_ctx_t i2c2Ctx = {.i2c_handle = &wire_2, .scl_pin = 5, .sda_pin = 23, .frequency = 400000};
-i2c_bus_t i2c2 = {.ctx = &i2c2Ctx};
+        void read_bytes(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len)
+        {
+            if(!wire || !buf || !len){return;}
+
+            wire->beginTransmission(addr);
+            wire->write(reg);
+            wire->endTransmission(false);
+            wire->requestFrom(addr, len);
+            wire->readBytes(buf, len);
+        }
+
+        void write_bytes(uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len)
+        {
+            if(!wire || (!buf && len > 0)){return;}
+
+            wire->beginTransmission(addr);
+            wire->write(reg);
+            wire->write(buf, len);
+            wire->endTransmission(true);
+        }
+
+        TwoWire *get_TwoWire_handle(){return wire;}
+
+    private:
+        uint8_t i2c_num;
+        TwoWire *wire = nullptr;
+        uint8_t scl_pin;
+        uint8_t sda_pin;
+        uint32_t freq;
+        bool is_init = false;
+};
+
+// 静态 i2c 设备表（资源池）
+static i2c_dev i2c_devs[] = {
+    i2c_dev(0, 18, 19, 400000),
+    i2c_dev(1, 5, 23, 400000),
+};
+static constexpr uint8_t I2C_DEV_NUM = sizeof(i2c_devs) / sizeof(i2c_devs[0]);
 
 /**
- * @brief 从 I2C 设备连续读取寄存器数据
+ * @brief 根据 bus_id 获取对应底层设备
  *
- * @param self 总线实例指针
- * @param addr 设备地址
- * @param reg 寄存器地址
- * @param buf 数据缓冲区
- * @param len 数据长度
+ * @note 超出范围时默认返回 bus0；
+ * @note 保证始终返回有效指针；
  */
-static void read_bytes(i2c_bus_t *self, uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len)
+static i2c_dev *get_dev(uint8_t bus_id)
 {
-    i2c_bus_ctx_t *p = (i2c_bus_ctx_t *)self->ctx;
-
-    p->i2c_handle->beginTransmission(addr);
-    p->i2c_handle->write(reg);
-    p->i2c_handle->endTransmission(false);      // 重复起始
-
-    p->i2c_handle->requestFrom(addr, len);
-    p->i2c_handle->readBytes(buf, len);
+    if(bus_id < I2C_DEV_NUM)
+    {
+        return &i2c_devs[bus_id];
+    }
+    return &i2c_devs[0];
 }
 
 /**
- * @brief 向 I2C 设备连续写入寄存器数据
+ * @brief i2c 总线构造函数
  *
- * @param self 总线实例指针
- * @param addr 设备地址
- * @param reg 寄存器地址
- * @param buf 数据缓冲区
- * @param len 数据长度
+ * @param bus_id i2c 总线编号
  */
-static void write_bytes(i2c_bus_t *self, uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len)
-{
-    i2c_bus_ctx_t *p = (i2c_bus_ctx_t *)self->ctx;
+i2c_bus::i2c_bus(uint8_t bus_id)
+    : bus_id(bus_id){}
 
-    p->i2c_handle->beginTransmission(addr);
-    p->i2c_handle->write(reg);
-    p->i2c_handle->write(buf, len);
-    p->i2c_handle->endTransmission(true);
+/**
+ * @brief 初始化 i2c 总线
+ */
+void i2c_bus::init()
+{
+    get_dev(bus_id)->init();
+}
+
+/**
+ * @brief 连续读取寄存器数据
+ *
+ * @param addr 设备地址
+ * @param reg  起始寄存器地址
+ * @param buf  接收缓冲区
+ * @param len  读取长度
+ */
+void i2c_bus::read_bytes(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len)
+{
+    get_dev(bus_id)->read_bytes(addr, reg, buf, len);
+}
+
+/**
+ * @brief 连续写入寄存器数据
+ *
+ * @param addr 设备地址
+ * @param reg  起始寄存器地址
+ * @param buf  数据缓冲区
+ * @param len  写入长度
+ */
+void i2c_bus::write_bytes(uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len)
+{
+    get_dev(bus_id)->write_bytes(addr, reg, buf, len);
 }
 
 /**
  * @brief 获取底层 TwoWire 句柄
- *
- * @param self 总线实例指针
- *
- * @return 返回值
  */
-static TwoWire *get_TwoWire_handle(i2c_bus_t *self)
+TwoWire *i2c_bus::get_TwoWire_handle() const
 {
-    i2c_bus_ctx_t *p = (i2c_bus_ctx_t *)self->ctx;
-
-    return p->i2c_handle;
-}
-
-/**
- * @brief 初始化 I2C 总线实例
- *
- * @param self 总线实例指针
- */
-void i2c_bus_init(i2c_bus_t *self)
-{
-    if(!self){return;}
-
-    i2c_bus_ctx_t *p = (i2c_bus_ctx_t *)self->ctx;
-    if(p->is_init){return;}
-    p->is_init = 1;
-
-    p->i2c_handle->begin(p->sda_pin, p->scl_pin, p->frequency);
-
-    self->read_bytes = read_bytes;
-    self->write_bytes = write_bytes;
-    self->get_TwoWire_handle = get_TwoWire_handle;
+    return get_dev(bus_id)->get_TwoWire_handle();
 }

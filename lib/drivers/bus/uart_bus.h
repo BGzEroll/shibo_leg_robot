@@ -3,21 +3,18 @@
 
 #include <Arduino.h>
 
-typedef struct uart_bus uart_bus_t;
+class uart_bus {
+    public:
+        explicit uart_bus(uint8_t bus_id = 0);
 
-struct uart_bus
-{
-    uint32_t (*read_bytes)(uart_bus_t *self, uint8_t *buf, uint32_t max_len);
-    void (*write_bytes)(uart_bus_t *self, const uint8_t *buf, uint32_t len);
-    HardwareSerial *(*get_HardwareSerial_handle)(uart_bus_t *self);
+    public:
+        void init();
+        uint32_t read_bytes(uint8_t *buf, uint32_t max_len);
+        void write_bytes(const uint8_t *buf, uint32_t len);
+        HardwareSerial *get_HardwareSerial_handle() const;
 
-    // 上下文
-    void * const ctx;
+    private:
+        uint8_t bus_id;
 };
-
-extern uart_bus_t uart0;
-extern uart_bus_t uart2;
-
-void uart_bus_init(uart_bus_t *self);
 
 #endif

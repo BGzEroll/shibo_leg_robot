@@ -4,6 +4,8 @@ static BLDCDriver3PWM left_driver = BLDCDriver3PWM(32, 33, 25, 22);
 static BLDCDriver3PWM right_driver = BLDCDriver3PWM(26, 27, 14, 12);
 static MagneticSensorI2C left_encoder = MagneticSensorI2C(AS5600_I2C);
 static MagneticSensorI2C right_encoder = MagneticSensorI2C(AS5600_I2C);
+static i2c_bus left_i2c(0);
+static i2c_bus right_i2c(1);
 
 static QueueHandle_t encoder_data_queue = nullptr;
 static QueueHandle_t motor_target_data_queue = nullptr;
@@ -36,11 +38,11 @@ QueueHandle_t motor::target_queue()
  */
 void motor::init()
 {
-    i2c_bus_init(&i2c1);
-    i2c_bus_init(&i2c2);
+    left_i2c.init();
+    right_i2c.init();
 
-    left_encoder.init(i2c1.get_TwoWire_handle(&i2c1));
-    right_encoder.init(i2c2.get_TwoWire_handle(&i2c2));
+    left_encoder.init(left_i2c.get_TwoWire_handle());
+    right_encoder.init(right_i2c.get_TwoWire_handle());
 
     left.linkSensor(&left_encoder);
     right.linkSensor(&right_encoder);

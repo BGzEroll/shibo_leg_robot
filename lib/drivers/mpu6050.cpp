@@ -16,7 +16,7 @@
  * @param addr 设备地址
  * @param acc_coef 加速度融合系数
  */
-mpu6050::mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef)
+mpu6050::mpu6050(i2c_bus &i2c, uint8_t addr, float acc_coef)
     : i2c(i2c), addr(addr), acc_coef(acc_coef)
 {
     memset(angle, 0, sizeof(angle));
@@ -31,7 +31,7 @@ mpu6050::mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef)
  */
 void mpu6050::init(uint8_t cail)
 {
-    i2c_bus_init(i2c);
+    i2c.init();
     write_cfg(MPU6050_SMPLRT_DIV, 0x00);
     write_cfg(MPU6050_CONFIG, 0x00);
     write_cfg(MPU6050_GYRO_CONFIG, 0x08);
@@ -55,7 +55,7 @@ void mpu6050::update()
  */
 void mpu6050::get_raw()
 {
-    i2c->read_bytes(i2c, addr, 0x3B, raw, 14);
+    i2c.read_bytes(addr, 0x3B, raw, 14);
 }
 
 /**
@@ -112,7 +112,7 @@ void mpu6050::process_data()
  */
 void mpu6050::write_cfg(uint8_t reg, uint8_t val)
 {
-    i2c->write_bytes(i2c, addr, reg, &val, 1);
+    i2c.write_bytes(addr, reg, &val, 1);
 }
 
 /**
@@ -124,14 +124,14 @@ void mpu6050::get_gyro_offset()
     uint8_t tmp[6];
     for(uint32_t i = 0; i < 1000; i++)
     {
-        i2c->read_bytes(i2c, addr, 0x43, tmp, 6);
+        i2c.read_bytes(addr, 0x43, tmp, 6);
     }
 
     int32_t sum[3] = {0};
     int16_t raw[3] = {0};
     for(uint32_t i = 0; i < 3000; i++)
     {
-        i2c->read_bytes(i2c, addr, 0x43, tmp, 6);
+        i2c.read_bytes(addr, 0x43, tmp, 6);
         for(uint8_t j = 0; j < 3; j++)
         {
             raw[j] = (int16_t)((tmp[0 + 2 * j] << 8) | tmp[1 + 2 * j]);

@@ -15,6 +15,7 @@ static uint8_t rx_buf[256];
 static uint32_t rx_len = 0;
 static uint8_t tx_buf[160];
 static uint32_t send_timer = 0;
+static uart_bus host_uart(0);
 
 /**
  * @brief 获取上位机遥控输入队列
@@ -31,7 +32,7 @@ QueueHandle_t host_comm::remote_queue()
  */
 void host_comm::init()
 {
-    uart_bus_init(&uart0);
+    host_uart.init();
     rx_queue = xQueueCreate(1, sizeof(host_comm::remote_data));
 }
 
@@ -104,7 +105,7 @@ static void parse_rx()
 static void update_rx()
 {
     uint8_t tmp[32];
-    uint32_t len = uart0.read_bytes(&uart0, tmp, sizeof(tmp));
+    uint32_t len = host_uart.read_bytes(tmp, sizeof(tmp));
     if(!len){return;}
     if(rx_len + len > sizeof(rx_buf)){rx_len = 0;}
 
@@ -164,7 +165,7 @@ static void send_status(uint32_t tick_ms)
     uint8_t checksum = 0;
     for(uint32_t i = 2; i < idx; i++){checksum += tx_buf[i];}
     tx_buf[idx++] = checksum;
-    uart0.write_bytes(&uart0, tx_buf, idx);
+    host_uart.write_bytes(tx_buf, idx);
 }
 
 /**

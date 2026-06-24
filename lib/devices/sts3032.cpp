@@ -13,7 +13,7 @@ typedef struct servoCmdPacket
     uint8_t acc;
 } servoCmdPacket_t;
 
-static uart_bus_t *pUart = &uart2;
+static uart_bus servo_uart(2);
 static servoCmdPacket_t packet[SERVO_NUM];      // [0] 为左舵机，[1] 为右舵机
 static servoCmdPacket_t lastState[SERVO_NUM];       // 记录上一次的舵机目标参数
 servoStatus_t sts3032::status[SERVO_NUM];
@@ -49,7 +49,7 @@ static void wFlush(void)
     ets_delay_us(15);
     if(txLen)
     {
-        pUart->write_bytes(pUart, txBuf, txLen);
+        servo_uart.write_bytes(txBuf, txLen);
         txLen = 0;
     }
 }
@@ -99,7 +99,7 @@ static void syncRead(uint8_t *ids, uint8_t servoNum, uint8_t startReg, uint8_t l
     for(uint8_t i = 2; i < idx; i++){sum += cmd[i];}
     cmd[idx++] = (~sum) & 0xFF;
 
-    pUart->write_bytes(pUart, cmd, idx);
+    servo_uart.write_bytes(cmd, idx);
 }
 
 /**
@@ -180,7 +180,7 @@ static void syncWritePosEx(uint8_t idNum)
 static int32_t parseSyncRead(uint8_t *ids, uint8_t n, servoStatus_t *status)
 {
     uint8_t buf[64];
-    uint32_t len = pUart->read_bytes(pUart, buf, sizeof(buf));
+    uint32_t len = servo_uart.read_bytes(buf, sizeof(buf));
 
     uint32_t offset = 0;
     for(uint8_t i = 0; i < n; i++)
@@ -297,7 +297,7 @@ void sts3032::move()
  */
 void sts3032::init()
 {
-    uart_bus_init(pUart);
+    servo_uart.init();
 
     // 中位校准前先关闭扭矩输出
     set_torque_switch(SERVO_LEFT, 0);

@@ -8,7 +8,7 @@
 class mpu6050
 {
     public:
-        mpu6050(i2c_bus_t *i2c, uint8_t addr, float acc_coef);
+        mpu6050(i2c_bus &i2c, uint8_t addr, float acc_coef);
 
     public:
         void init(uint8_t cail = 0);
@@ -21,7 +21,7 @@ class mpu6050
         float angle[3];
 
     private:
-        i2c_bus_t *i2c;
+        i2c_bus &i2c;
         uint8_t addr;
         float acc_coef;
 
