@@ -1,19 +1,15 @@
 #include <Arduino.h>
+
 #include "start.h"
 
-
-/**
- * @brief Arduino 启动回调
- */
 void setup() {
   // put your setup code here, to run once:
   start_init_all();
+
+  vTaskDelete(nullptr);    // 关闭 arduino 的 loop 任务
 }
 
-/**
- * @brief Arduino 主循环回调
- */
 void loop() {
   // put your main code here, to run repeatedly:
-  delay(10000000);
+  vTaskDelay(portMAX_DELAY);
 }
