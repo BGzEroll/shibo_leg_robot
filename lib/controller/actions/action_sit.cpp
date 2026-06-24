@@ -29,6 +29,7 @@ controller::balance_request controller::actions::update_sit(action_state &state,
             if(fabsf(ctx.status.pitch_angle) >= 0.25f || state.timer >= 700)
             {
                 state.timer = 0;
+                cmd.command.enable_motor = false;
                 cmd.command.reset_reference = true;
                 state.phase = action::DONE;
                 break;

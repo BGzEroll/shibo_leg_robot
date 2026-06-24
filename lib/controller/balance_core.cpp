@@ -31,6 +31,7 @@ struct sensor_snapshot
 };
 
 static QueueHandle_t status_queue = nullptr;
+static bool motor_output_enabled = true;
 
 struct core_runtime
 {
@@ -321,7 +322,19 @@ static void solve_output()
         core.status.output[0] = 0.0f;
         core.status.output[1] = 0.0f;
         publish_motor_target(0.0f, 0.0f);
+        if(motor_output_enabled)
+        {
+            motor::left.disable();
+            motor::right.disable();
+            motor_output_enabled = false;
+        }
         return;
+    }
+    if(!motor_output_enabled)
+    {
+        motor::left.enable();
+        motor::right.enable();
+        motor_output_enabled = true;
     }
     if(core.command.direct_output)
     {
