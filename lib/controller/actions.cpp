@@ -292,22 +292,27 @@ static balance_request update_sit(action_state &state, action_io &ctx, uint32_t 
     {
         case PREPARE:
             set_torque(2);
+            state.timer = 0;
             state.phase = MOVING;
             break;
 
         case MOVING:
+            state.timer += tick_ms;
+            if(fabsf(ctx.status.pitch_angle) >= 0.25f || state.timer >= 700)
+            {
+                state.timer = 0;
+                cmd.command.reset_reference = true;
+                state.phase = DONE;
+                break;
+            }
             cmd.command.enable_motor = true;
             cmd.command.direct_output = true;
             cmd.target.direct_left = -0.15f;
             cmd.target.direct_right = -0.15f;
-            if(fabsf(ctx.status.pitch_angle) >= 0.25f || (state.timer += tick_ms) >= 5000)
-            {
-                state.timer = 0;
-                state.phase = DONE;
-            }
             break;
 
         case DONE:
+            cmd.command.reset_reference = true;
             if(ctx.input.buttons & BTN_LS){set_torque(0);}
             if(ctx.input.buttons & BTN_RB)
             {

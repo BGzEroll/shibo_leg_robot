@@ -316,13 +316,6 @@ static void publish_motor_target(float left, float right)
  */
 static void solve_output()
 {
-    if(core.command.direct_output)
-    {
-        core.status.output[0] = core.target.direct_left;
-        core.status.output[1] = core.target.direct_right;
-        publish_motor_target(core.target.direct_left, core.target.direct_right);
-        return;
-    }
     if(!core.command.enable_motor)
     {
         core.status.output[0] = 0.0f;
@@ -330,7 +323,20 @@ static void solve_output()
         publish_motor_target(0.0f, 0.0f);
         return;
     }
-    if(!core.command.enable_balance){return;}
+    if(core.command.direct_output)
+    {
+        core.status.output[0] = core.target.direct_left;
+        core.status.output[1] = core.target.direct_right;
+        publish_motor_target(core.target.direct_left, core.target.direct_right);
+        return;
+    }
+    if(!core.command.enable_balance)
+    {
+        core.status.output[0] = 0.0f;
+        core.status.output[1] = 0.0f;
+        publish_motor_target(0.0f, 0.0f);
+        return;
+    }
 
     float x[6] = {
         lqi::state.pitch_angle,
