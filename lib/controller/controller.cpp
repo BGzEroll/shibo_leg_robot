@@ -48,7 +48,7 @@ static void sample_input()
 {
     input = controller::control_input{};
 
-    if(xbox_dev::gamepad.get_connection_state())
+    if(xbox_dev::connected())
     {
         xbox_dev::data gamepad_data;
         if(xbox_dev::queue() && xQueuePeek(xbox_dev::queue(), &gamepad_data, 0) == pdTRUE)

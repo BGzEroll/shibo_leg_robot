@@ -26,14 +26,14 @@ class xbox
 {
     public:
         xbox(const char *mac);
+        ~xbox();
 
     public:
         void init();
         void update();
         void set_key_vibration(uint8_t power, uint32_t duration);
         void set_trigger_vibration(uint8_t trigger, uint32_t duration);
-        // uint8_t get_connection_state(){return core.isConnected() ? 1 : 0;}
-        uint8_t get_connection_state(){return was_connected;}
+        bool get_connection_state(){return was_connected;}
 
     public:
         uint16_t buttons;
@@ -53,7 +53,7 @@ class xbox
         void parser_xbox_data();
 
     private:
-        uint8_t was_connected;
+        bool was_connected;
 
         enum class vibration_state_t
         {

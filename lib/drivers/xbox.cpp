@@ -11,10 +11,19 @@ xbox::xbox(const char *mac)
     buttons = 0;
     memset(axes, 0, sizeof(axes));
 
-    was_connected = 0;
+    was_connected = false;
     vibration_state = vibration_state_t::off;
     vibration_duration = 0;
     vibration_start_time = 0;
+}
+
+/**
+ * @brief 释放 Xbox 手柄驱动回调资源
+ */
+xbox::~xbox()
+{
+    delete core.scanCBs;
+    delete core.clientCBs;
 }
 
 /**
@@ -127,7 +136,7 @@ void xbox::process_notification()
     {
         if(!was_connected)
         {
-            was_connected = 1;
+            was_connected = true;
             set_key_vibration(50, 1000);
         }
     }
@@ -135,7 +144,7 @@ void xbox::process_notification()
     {
         if(was_connected)
         {
-            was_connected = 0;
+            was_connected = false;
             set_key_vibration(50, 200);
         }
     }
