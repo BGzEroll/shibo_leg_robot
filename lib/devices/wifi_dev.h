@@ -6,10 +6,10 @@
 
 namespace wifi_dev
 {
-	void init();
-	void task_entry(void *arg);
 	bool station_connected();
 	IPAddress station_ip();
+	void init();
+	void task_entry(void *arg);
 }
 
 #endif

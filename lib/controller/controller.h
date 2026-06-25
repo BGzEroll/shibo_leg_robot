@@ -5,8 +5,8 @@
 
 namespace controller
 {
-	void init();
 	void update(uint32_t tick_ms);
+	void init();
 }
 
 #endif

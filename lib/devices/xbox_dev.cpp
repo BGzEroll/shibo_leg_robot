@@ -33,7 +33,6 @@ void xbox_dev::init()
  */
 void xbox_dev::task_entry(void *arg)
 {
-    (void)arg;
 
     while(true)
     {

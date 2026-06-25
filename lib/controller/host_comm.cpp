@@ -28,15 +28,6 @@ QueueHandle_t host_comm::remote_queue()
 }
 
 /**
- * @brief 初始化上位机通信模块
- */
-void host_comm::init()
-{
-    host_uart.init();
-    rx_queue = xQueueCreate(1, sizeof(host_comm::remote_data));
-}
-
-/**
  * @brief 解析上位机发送的 Xbox 输入帧
  *
  * @param frame 接收帧缓冲区
@@ -169,13 +160,21 @@ static void send_status(uint32_t tick_ms)
 }
 
 /**
+ * @brief 初始化上位机通信模块
+ */
+void host_comm::init()
+{
+    host_uart.init();
+    rx_queue = xQueueCreate(1, sizeof(host_comm::remote_data));
+}
+
+/**
  * @brief 上位机通信任务入口
  *
  * @param arg RTOS 任务参数
  */
 void host_comm::task_entry(void *arg)
 {
-    (void)arg;
     TickType_t last_wake_time = xTaskGetTickCount();
     while(true)
     {

@@ -440,20 +440,6 @@ static void control_step(uint32_t tick_ms)
 }
 
 /**
- * @brief 初始化平衡核心及其底层设备
- */
-void balance_core::init()
-{
-    lqi::init();
-
-    status_queue = xQueueCreate(1, sizeof(balance_core::status_snapshot));
-
-    sts3032::init();
-    mpu6050_dev::init();
-    motor::init();
-}
-
-/**
  * @brief 设置平衡核心目标量
  *
  * @param target 目标值
@@ -500,13 +486,26 @@ balance_core::info_t balance_core::get_info()
 }
 
 /**
+ * @brief 初始化平衡核心及其底层设备
+ */
+void balance_core::init()
+{
+    lqi::init();
+
+    status_queue = xQueueCreate(1, sizeof(balance_core::status_snapshot));
+
+    sts3032::init();
+    mpu6050_dev::init();
+    motor::init();
+}
+
+/**
  * @brief 平衡核心高频 IO 任务入口
  *
  * @param arg RTOS 任务参数
  */
 void balance_core::core_task_entry(void *arg)
 {
-    (void)arg;
     uint32_t last_encoder_us = (uint32_t)esp_timer_get_time();
     uint32_t last_imu_us = last_encoder_us;
 
@@ -569,7 +568,6 @@ void balance_core::core_task_entry(void *arg)
  */
 void balance_core::control_task_entry(void *arg)
 {
-    (void)arg;
     TickType_t last_wake_time = xTaskGetTickCount();
 
     while(true)

@@ -114,18 +114,6 @@ static void update_camera(uint32_t tick_ms)
 }
 
 /**
- * @brief 初始化控制器模块及其内部子模块
- */
-void controller::init()
-{
-    host_comm::init();
-    balance_core::init();
-    balance_info = balance_core::get_info();
-    controller::actions_init(action);
-    leg = controller::leg_runtime{};
-}
-
-/**
  * @brief 执行一次上层控制器更新
  *
  * @param tick_ms 本次更新周期，单位毫秒
@@ -141,4 +129,16 @@ void controller::update(uint32_t tick_ms)
 
     balance_core::set_target(request.target);
     balance_core::set_command(request.command);
+}
+
+/**
+ * @brief 初始化控制器模块及其内部子模块
+ */
+void controller::init()
+{
+    host_comm::init();
+    balance_core::init();
+    balance_info = balance_core::get_info();
+    controller::actions_init(action);
+    leg = controller::leg_runtime{};
 }

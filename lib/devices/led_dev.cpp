@@ -28,7 +28,6 @@ void led_dev::init()
  */
 void led_dev::task_entry(void *arg)
 {
-    (void)arg;
 
     while(true)
     {

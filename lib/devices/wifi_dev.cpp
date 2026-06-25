@@ -283,6 +283,26 @@ static void switch_to_station_only()
 }
 
 /**
+ * @brief 查询 STA 是否已经连接
+ *
+ * @return 已连接时返回 true
+ */
+bool wifi_dev::station_connected()
+{
+    return WiFi.status() == WL_CONNECTED;
+}
+
+/**
+ * @brief 获取 STA 本地 IP
+ *
+ * @return STA 本地 IP 地址
+ */
+IPAddress wifi_dev::station_ip()
+{
+    return WiFi.localIP();
+}
+
+/**
  * @brief 初始化 WiFi 模块并按 NVS 凭据决定工作模式
  */
 void wifi_dev::init()
@@ -309,7 +329,6 @@ void wifi_dev::init()
  */
 void wifi_dev::task_entry(void *arg)
 {
-    (void)arg;
     while(true)
     {
         if(config_portal_active && server_started)
@@ -322,24 +341,4 @@ void wifi_dev::task_entry(void *arg)
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-}
-
-/**
- * @brief 查询 STA 是否已经连接
- *
- * @return 已连接时返回 true
- */
-bool wifi_dev::station_connected()
-{
-    return WiFi.status() == WL_CONNECTED;
-}
-
-/**
- * @brief 获取 STA 本地 IP
- *
- * @return STA 本地 IP 地址
- */
-IPAddress wifi_dev::station_ip()
-{
-    return WiFi.localIP();
 }
