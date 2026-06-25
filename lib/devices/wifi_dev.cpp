@@ -30,7 +30,7 @@ static String json_escape(const String &value)
 {
     String out;
     out.reserve(value.length() + 8);
-    for(size_t i = 0; i < value.length(); i++)
+    for(uint32_t i = 0; i < (uint32_t)value.length(); i++)
     {
         char c = value[i];
         if(c == '"' || c == '\\')
@@ -203,9 +203,9 @@ static void handle_root()
  */
 static void handle_scan()
 {
-    int count = WiFi.scanNetworks(false, true);
+    int32_t count = WiFi.scanNetworks(false, true);
     String json = "[";
-    for(int i = 0; i < count; i++)
+    for(int32_t i = 0; i < count; i++)
     {
         if(i){json += ',';}
         json += "{\"ssid\":\"" + json_escape(WiFi.SSID(i)) + "\",";
