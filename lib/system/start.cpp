@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "balance_core.h"
 #include "controller.h"
+#include "wifi_dev.h"
 #include "host_comm.h"
 #include "led_dev.h"
 #include "xbox_dev.h"
@@ -18,6 +19,7 @@ static void task_list()
     xTaskCreatePinnedToCore(balance_core::core_task_entry, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(balance_core::control_task_entry, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
     xTaskCreatePinnedToCore(host_comm::task_entry, "host_comm_task", 4096, nullptr, 3, nullptr, 0);
+    xTaskCreatePinnedToCore(wifi_dev::task_entry, "wifi_dev_task", 4096, nullptr, 2, nullptr, 0);
 }
 
 /**
@@ -29,6 +31,7 @@ void start_init_all()
 
     led_dev::init();
     xbox_dev::init();
+    wifi_dev::init();
     controller::init();
 
     task_list();
