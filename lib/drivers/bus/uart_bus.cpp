@@ -58,7 +58,7 @@ class uart_dev {
 
 // 静态 uart 设备表（资源池）
 static uart_dev uart_devs[] = {
-    uart_dev(0, 921600),
+    uart_dev(0, 230400),
     uart_dev(1, 115200),
     uart_dev(2, 1000000)
 };

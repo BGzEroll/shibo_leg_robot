@@ -1,0 +1,330 @@
+#include "action_kick.h"
+
+#include "action_common.h"
+#include "host_comm.h"
+#include "ptk7350.h"
+#include "xbox.h"
+
+namespace action = controller::actions;
+
+static constexpr float CAM_INITIAL_ANGLE = 90.0f;
+static constexpr float CAM_LOST_ANGLE = 60.0f;
+static constexpr float CAM_P = 0.07f;
+static constexpr float CAM_D = 0.0f;
+static constexpr float CAM_STEP_LIMIT = 10.0f;
+static constexpr float YAW_AIM_KP = 0.012f;
+static constexpr float YAW_ALIGN_KP = 1.2f;
+static constexpr float YAW_RATE_LIMIT = 1.2f;
+static constexpr float YAW_ALIGN_LIMIT = 10.0f * PI / 180.0f;
+static constexpr float RUN_FORWARD_MAX = 0.25f;
+static constexpr float RUN_BACK_VEL = -0.12f;
+static constexpr int16_t AIM_DX_LIMIT = 50;
+static constexpr int16_t PLACE_BALL_S2 = 40;
+static constexpr int16_t PLACE_KICK_DY = -10;
+static constexpr int16_t CHASE_BALL_S2 = 30;
+static constexpr int16_t RUN_KICK_DY = -5;
+static constexpr int16_t KICK_DY_MAX = 120;
+static constexpr int16_t OB_BALL_DY = 120;
+static constexpr uint16_t FRONTIER_READY_ANGLE = 100;
+static constexpr uint16_t FRONTIER_KICK_ANGLE = 0;
+static constexpr uint32_t KICK_HOLD_MS = 320;
+static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
+
+/**
+ * @brief 设置摄像头舵机角度
+ *
+ * @param state 动作状态机状态
+ * @param angle 目标角度
+ */
+static void set_camera(controller::action_state &state, float angle)
+{
+    state.kick.cam_angle = constrain(angle, (float)CAMSERVO_MIN, (float)CAMSERVO_MAX);
+    ptk7350::cam_servo.set_angle((uint16_t)state.kick.cam_angle);
+}
+
+/**
+ * @brief 设置前挡舵机角度
+ *
+ * @param state 动作状态机状态
+ * @param angle 目标角度
+ */
+static void set_frontier(controller::action_state &state, uint16_t angle)
+{
+    angle = constrain(angle, (uint16_t)FRONTIERSERVO_MIN, (uint16_t)FRONTIERSERVO_MAX);
+    if(state.kick.frontier_angle == angle){return;}
+
+    state.kick.frontier_angle = angle;
+    ptk7350::frontier_servo.set_angle(angle);
+}
+
+/**
+ * @brief 生成踢球模式的基础平衡请求
+ *
+ * @param ctx 动作输入输出上下文
+ *
+ * @return 生成的平衡请求
+ */
+static controller::balance_request base_command(controller::action_io &ctx)
+{
+    controller::balance_request cmd;
+    cmd.command.enable_balance = true;
+    cmd.command.enable_motor = true;
+    cmd.command.enable_steering = true;
+    action::run_leg_control(ctx);
+    return cmd;
+}
+
+/**
+ * @brief 获取有效视觉测量
+ *
+ * @param out 视觉测量输出
+ *
+ * @return 当前视觉有效时返回 true
+ */
+static bool read_vision(host_comm::vision_measurement_t &out)
+{
+    return host_comm::vision_latest(out);
+}
+
+/**
+ * @brief 根据 dy 调整摄像头俯仰角
+ *
+ * @param state 动作状态机状态
+ * @param dy 目标纵向偏差
+ */
+static void aim_camera(controller::action_state &state, int16_t dy)
+{
+    if(abs(dy) <= 10)
+    {
+        state.kick.last_dy = 0;
+        state.kick.last_dy_time = 0;
+        return;
+    }
+
+    uint32_t now = millis();
+    if(!state.kick.last_dy_time)
+    {
+        state.kick.last_dy_time = now;
+        state.kick.last_dy = dy;
+    }
+
+    uint32_t dt = max((uint32_t)1, (uint32_t)(now - state.kick.last_dy_time));
+    float d_term = CAM_D * (float)(dy - state.kick.last_dy) / (float)dt * 10.0f;
+    float output = constrain(CAM_P * (float)dy + d_term, -CAM_STEP_LIMIT, CAM_STEP_LIMIT);
+    set_camera(state, state.kick.cam_angle - output);
+
+    state.kick.last_dy = dy;
+    state.kick.last_dy_time = now;
+}
+
+/**
+ * @brief 根据 dx 生成瞄准转向速度
+ *
+ * @param dx 目标横向偏差
+ *
+ * @return 目标偏航角速度
+ */
+static float aim_yaw_rate(int16_t dx)
+{
+    if(abs(dx) < AIM_DX_LIMIT){return 0.0f;}
+    return constrain(-(float)dx * YAW_AIM_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
+}
+
+/**
+ * @brief 让踢球机构进入准备状态
+ *
+ * @param state 动作状态机状态
+ */
+static void ready_kick(controller::action_state &state)
+{
+    if(!state.kick.kicking)
+    {
+        set_frontier(state, FRONTIER_READY_ANGLE);
+    }
+}
+
+/**
+ * @brief 触发一次踢球动作
+ *
+ * @param state 动作状态机状态
+ */
+static void trigger_kick(controller::action_state &state)
+{
+    set_frontier(state, FRONTIER_KICK_ANGLE);
+    state.kick.kicking = true;
+    state.kick.kick_timer = 0;
+}
+
+/**
+ * @brief 推进踢球保持计时
+ *
+ * @param state 动作状态机状态
+ * @param tick_ms 本次更新周期，单位毫秒
+ */
+static void update_kick_hold(controller::action_state &state, uint32_t tick_ms)
+{
+    if(!state.kick.kicking){return;}
+
+    state.kick.kick_timer += tick_ms;
+    if(state.kick.kick_timer >= KICK_HOLD_MS)
+    {
+        state.kick.kicking = false;
+        state.kick.kick_timer = 0;
+    }
+}
+
+/**
+ * @brief 取消踢球模式并回到普通平衡
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ */
+static void cancel_kick(controller::action_state &state, controller::action_io &ctx)
+{
+    set_frontier(state, FRONTIER_KICK_ANGLE);
+    action::reset_leg(ctx.leg);
+    action::begin_mode(state, controller::mode_id::BALANCE);
+}
+
+/**
+ * @brief 初始化踢球模式状态
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ */
+static void prepare_kick(controller::action_state &state, controller::action_io &ctx)
+{
+    state.kick = controller::kick_runtime{};
+    state.kick.target_yaw = ctx.status.yaw_angle;
+    set_camera(state, CAM_INITIAL_ANGLE);
+    set_frontier(state, FRONTIER_READY_ANGLE);
+    state.phase = action::MOVING;
+}
+
+/**
+ * @brief 更新原地踢球模式状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 生成的平衡请求
+ */
+controller::balance_request controller::actions::update_kick_place(action_state &state, action_io &ctx, uint32_t tick_ms)
+{
+    balance_request cmd = base_command(ctx);
+    if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
+    {
+        cancel_kick(state, ctx);
+        return cmd;
+    }
+
+    if(state.phase == action::PREPARE){prepare_kick(state, ctx);}
+    update_kick_hold(state, tick_ms);
+
+    host_comm::vision_measurement_t vision;
+    if(!read_vision(vision))
+    {
+        set_camera(state, CAM_LOST_ANGLE);
+        set_frontier(state, FRONTIER_KICK_ANGLE);
+        return cmd;
+    }
+
+    aim_camera(state, vision.dy);
+    cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
+
+    if(state.kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
+    {
+        if(!state.kick.kicking){trigger_kick(state);}
+    }
+    else
+    {
+        ready_kick(state);
+    }
+    return cmd;
+}
+
+/**
+ * @brief 更新运动踢球模式状态机并生成平衡请求
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 生成的平衡请求
+ */
+controller::balance_request controller::actions::update_kick_run(action_state &state, action_io &ctx, uint32_t tick_ms)
+{
+    balance_request cmd = base_command(ctx);
+    if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
+    {
+        cancel_kick(state, ctx);
+        return cmd;
+    }
+
+    if(state.phase == action::PREPARE){prepare_kick(state, ctx);}
+    if(state.kick.post_kick)
+    {
+        if(state.kick.kicking)
+        {
+            state.kick.kick_timer += tick_ms;
+            if(state.kick.kick_timer >= KICK_HOLD_MS)
+            {
+                state.kick.kicking = false;
+                state.kick.kick_timer = 0;
+            }
+            return cmd;
+        }
+
+        state.kick.post_timer += tick_ms;
+        if(state.kick.post_timer < RUN_AFTER_KICK_MS)
+        {
+            float err = action::angle_error(state.kick.target_yaw, ctx.status.yaw_angle);
+            if(fabsf(err) < YAW_ALIGN_LIMIT)
+            {
+                state.kick.aligned = true;
+                cmd.target.linear_vel = RUN_BACK_VEL;
+            }
+            else
+            {
+                cmd.target.yaw_rate = constrain(err * YAW_ALIGN_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
+            }
+            return cmd;
+        }
+
+        state.kick.post_kick = false;
+        state.kick.post_timer = 0;
+        state.kick.chased = false;
+        state.kick.aligned = false;
+    }
+
+    host_comm::vision_measurement_t vision;
+    if(!read_vision(vision))
+    {
+        set_camera(state, CAM_LOST_ANGLE);
+        set_frontier(state, FRONTIER_KICK_ANGLE);
+        return cmd;
+    }
+
+    aim_camera(state, vision.dy);
+    cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
+
+    if(state.kick.chased)
+    {
+        trigger_kick(state);
+        state.kick.post_kick = true;
+        return cmd;
+    }
+
+    if(state.kick.cam_angle < (float)CHASE_BALL_S2 && vision.dy > RUN_KICK_DY && vision.dy < KICK_DY_MAX)
+    {
+        state.kick.chased = true;
+        return cmd;
+    }
+
+    int16_t ob_y = OB_BALL_DY - vision.dy;
+    float forward = constrain((float)ob_y * 0.002f, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
+    cmd.target.linear_vel = forward;
+    ready_kick(state);
+    return cmd;
+}

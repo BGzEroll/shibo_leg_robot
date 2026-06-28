@@ -14,7 +14,16 @@ namespace host_comm
 		float axes[6]{};
 	};
 
+	struct vision_measurement_t
+	{
+		int16_t dx = 0;
+		int16_t dy = 0;
+		uint32_t timestamp_ms = 0;
+		bool valid = false;
+	};
+
 	QueueHandle_t remote_queue();
+	bool vision_latest(vision_measurement_t &out);
 	void task_entry(void *arg);
 }
 

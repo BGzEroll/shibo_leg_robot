@@ -14,7 +14,9 @@ namespace controller
 		BALANCE,
 		SIT,
 		JUMP,
-		STOP
+		STOP,
+		KICK_PLACE,
+		KICK_RUN
 	};
 
 	enum class jump_command : uint8_t
@@ -72,6 +74,21 @@ namespace controller
 		float yaw_cmd = 0.0f;
 	};
 
+	struct kick_runtime
+	{
+		float cam_angle = 90.0f;
+		float target_yaw = 0.0f;
+		int16_t last_dy = 0;
+		uint16_t frontier_angle = 181;
+		uint32_t last_dy_time = 0;
+		uint32_t kick_timer = 0;
+		uint32_t post_timer = 0;
+		bool chased = false;
+		bool aligned = false;
+		bool kicking = false;
+		bool post_kick = false;
+	};
+
 	struct action_state
 	{
 		mode_id mode = mode_id::BOOT;
@@ -80,6 +97,7 @@ namespace controller
 		uint32_t ready_timer = 0;
 		uint32_t elapsed = 0;
 		jump_runtime jump;
+		kick_runtime kick;
 	};
 
 	void actions_init(action_state &state);

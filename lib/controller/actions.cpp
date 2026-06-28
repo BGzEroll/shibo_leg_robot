@@ -2,6 +2,7 @@
 
 #include "actions/action_common.h"
 #include "actions/action_jump.h"
+#include "actions/action_kick.h"
 #include "actions/action_sit.h"
 #include "xbox.h"
 
@@ -28,6 +29,7 @@ void controller::actions::begin_mode(action_state &state, mode_id mode, jump_com
     state.ready_timer = 0;
     state.elapsed = 0;
     state.jump = jump_runtime{};
+    state.kick = kick_runtime{};
 
     if(mode != mode_id::JUMP){return;}
 
@@ -114,6 +116,24 @@ static balance_request update_balance(action_state &state, action_io &ctx)
         action::reset_leg(ctx.leg);
         cmd.command.reset_reference = true;
     }
+
+    bool modifier = (ctx.input.buttons & BTN_SELECT) != 0;
+    if(modifier && (ctx.input.pressed_buttons & BTN_X))
+    {
+        action::begin_mode(state, mode_id::KICK_PLACE);
+        return cmd;
+    }
+    if(modifier && (ctx.input.pressed_buttons & BTN_Y))
+    {
+        action::begin_mode(state, mode_id::KICK_RUN);
+        return cmd;
+    }
+    if(modifier && (ctx.input.pressed_buttons & BTN_B))
+    {
+        action::begin_mode(state, mode_id::BALANCE);
+        return cmd;
+    }
+
     if(ctx.input.pressed_buttons & BTN_LB){action::begin_mode(state, mode_id::SIT);}
     if(ctx.input.pressed_buttons & BTN_RS){action::begin_mode(state, mode_id::JUMP, jump_command::IN_PLACE);}
     if(ctx.input.pressed_buttons & BTN_Y){action::begin_mode(state, mode_id::JUMP, jump_command::FORWARD);}
@@ -177,6 +197,12 @@ controller::balance_request controller::actions_update(action_state &state, acti
 
         case mode_id::JUMP:
             return action::update_jump(state, ctx, tick_ms);
+
+        case mode_id::KICK_PLACE:
+            return action::update_kick_place(state, ctx, tick_ms);
+
+        case mode_id::KICK_RUN:
+            return action::update_kick_run(state, ctx, tick_ms);
 
         case mode_id::STOP:
             if(ctx.input.buttons & BTN_RB)

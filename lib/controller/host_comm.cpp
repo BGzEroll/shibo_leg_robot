@@ -10,12 +10,17 @@ namespace host_comm
 	void init();
 }
 
+static constexpr int16_t VISION_LOST_VALUE = 32767;
+static constexpr uint32_t VISION_TIMEOUT_MS = 350;
+
 static QueueHandle_t rx_queue = nullptr;
 static uint8_t rx_buf[256];
 static uint32_t rx_len = 0;
 static uint8_t tx_buf[160];
 static uint32_t send_timer = 0;
 static uart_bus host_uart(0);
+static portMUX_TYPE vision_lock = portMUX_INITIALIZER_UNLOCKED;
+static host_comm::vision_measurement_t vision_measurement;
 
 /**
  * @brief 获取上位机遥控输入队列
@@ -25,6 +30,28 @@ static uart_bus host_uart(0);
 QueueHandle_t host_comm::remote_queue()
 {
     return rx_queue;
+}
+
+/**
+ * @brief 获取最新视觉测量快照
+ *
+ * @param out 视觉测量输出
+ *
+ * @return 当前视觉测量有效时返回 true
+ */
+bool host_comm::vision_latest(vision_measurement_t &out)
+{
+    portENTER_CRITICAL(&vision_lock);
+    out = vision_measurement;
+    portEXIT_CRITICAL(&vision_lock);
+
+    if(!out.valid){return false;}
+    if((uint32_t)(millis() - out.timestamp_ms) > VISION_TIMEOUT_MS)
+    {
+        out.valid = false;
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -53,6 +80,64 @@ static void parse_xbox(uint8_t *frame)
 }
 
 /**
+ * @brief 解析 MaixCam 视觉测量帧
+ *
+ * @param frame 接收帧缓冲区
+ */
+static void parse_vision(uint8_t *frame)
+{
+    if(frame[3] != 4){return;}
+
+    uint8_t *p = &frame[4];
+    host_comm::vision_measurement_t data;
+    data.dx = (int16_t)(p[0] | (p[1] << 8));
+    data.dy = (int16_t)(p[2] | (p[3] << 8));
+    data.timestamp_ms = millis();
+    data.valid = data.dx != VISION_LOST_VALUE && data.dy != VISION_LOST_VALUE;
+
+    portENTER_CRITICAL(&vision_lock);
+    vision_measurement = data;
+    portEXIT_CRITICAL(&vision_lock);
+}
+
+/**
+ * @brief 校验 Xbox 遥控帧
+ *
+ * @param frame 接收帧缓冲区
+ * @param payload_len 负载长度
+ * @param frame_len 整帧长度
+ *
+ * @return 校验通过时返回 true
+ */
+static bool check_xbox_frame(uint8_t *frame, uint8_t payload_len, uint32_t frame_len)
+{
+    uint8_t checksum = 0;
+    for(uint32_t i = 0; i < payload_len; i++)
+    {
+        checksum += frame[4 + i];
+    }
+    return checksum == frame[frame_len - 1];
+}
+
+/**
+ * @brief 校验 MaixCam 视觉帧
+ *
+ * @param frame 接收帧缓冲区
+ * @param frame_len 整帧长度
+ *
+ * @return 校验通过时返回 true
+ */
+static bool check_vision_frame(uint8_t *frame, uint32_t frame_len)
+{
+    uint8_t checksum = 0;
+    for(uint32_t i = 0; i < frame_len - 1; i++)
+    {
+        checksum += frame[i];
+    }
+    return checksum == frame[frame_len - 1];
+}
+
+/**
  * @brief 解析 UART 接收缓冲区中的完整帧
  */
 static void parse_rx()
@@ -66,19 +151,19 @@ static void parse_rx()
             continue;
         }
 
+        uint8_t cmd = rx_buf[idx + 2];
         uint8_t payload_len = rx_buf[idx + 3];
         uint32_t frame_len = 2 + 1 + 1 + payload_len + 1;
         if(rx_len - idx < frame_len){break;}
 
-        uint8_t checksum = 0;
-        for(uint32_t i = 0; i < payload_len; i++)
+        uint8_t *frame = &rx_buf[idx];
+        if(cmd == 0x01 && check_xbox_frame(frame, payload_len, frame_len))
         {
-            checksum += rx_buf[idx + 4 + i];
+            parse_xbox(frame);
         }
-
-        if(checksum == rx_buf[idx + frame_len - 1] && rx_buf[idx + 2] == 0x01)
+        else if(cmd == 0x02 && check_vision_frame(frame, frame_len))
         {
-            parse_xbox(&rx_buf[idx]);
+            parse_vision(frame);
         }
         idx += frame_len;
     }
