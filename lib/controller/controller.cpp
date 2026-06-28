@@ -131,6 +131,27 @@ void controller::update(uint32_t tick_ms)
     balance_core::set_command(request.command);
 }
 
+#ifdef DEBUG_MODE
+/**
+ * @brief 获取控制器调试快照
+ *
+ * @param out 调试快照输出
+ *
+ * @return 获取成功时返回 true
+ */
+bool controller::debug_snapshot(debug_snapshot_t &out)
+{
+	out.mode = (uint8_t)action.mode;
+	out.phase = action.phase;
+	out.kick_mode = action.mode == mode_id::KICK_PLACE || action.mode == mode_id::KICK_RUN;
+	out.kick_cam_angle = action.kick.cam_angle;
+	out.kick_cam_error = action.kick.cam_error;
+	out.kick_cam_rate = action.kick.cam_rate;
+	out.kick_yaw_rate = action.kick.yaw_rate;
+	return true;
+}
+#endif
+
 /**
  * @brief 初始化控制器模块及其内部子模块
  */

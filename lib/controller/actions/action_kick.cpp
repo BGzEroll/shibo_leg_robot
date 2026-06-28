@@ -7,18 +7,20 @@
 
 namespace action = controller::actions;
 
-static constexpr float CAM_INITIAL_ANGLE = 90.0f;
+static constexpr float CAM_INITIAL_ANGLE = 60.0f;
 static constexpr float CAM_LOST_ANGLE = 60.0f;
-static constexpr float CAM_P = 0.07f;
-static constexpr float CAM_D = 0.0f;
-static constexpr float CAM_STEP_LIMIT = 10.0f;
-static constexpr float YAW_AIM_KP = 0.012f;
+static constexpr float CAM_PID_P = 0.75f;
+static constexpr float CAM_PID_I = 0.0f;
+static constexpr float CAM_PID_D = 0.0f;
+static constexpr float CAM_PID_RAMP = 420.0f;
+static constexpr float CAM_PID_LIMIT = 90.0f;
+static constexpr float YAW_AIM_KP = 0.024f;
 static constexpr float YAW_ALIGN_KP = 1.2f;
-static constexpr float YAW_RATE_LIMIT = 1.2f;
+static constexpr float YAW_RATE_LIMIT = 0.9f;
 static constexpr float YAW_ALIGN_LIMIT = 10.0f * PI / 180.0f;
 static constexpr float RUN_FORWARD_MAX = 0.25f;
 static constexpr float RUN_BACK_VEL = -0.12f;
-static constexpr int16_t AIM_DX_LIMIT = 50;
+static constexpr int16_t AIM_DX_LIMIT = 10;
 static constexpr int16_t PLACE_BALL_S2 = 40;
 static constexpr int16_t PLACE_KICK_DY = -10;
 static constexpr int16_t CHASE_BALL_S2 = 30;
@@ -54,7 +56,7 @@ static void set_frontier(controller::action_state &state, uint16_t angle)
     if(state.kick.frontier_angle == angle){return;}
 
     state.kick.frontier_angle = angle;
-    ptk7350::frontier_servo.set_angle(angle);
+    // ptk7350::frontier_servo.set_angle(angle);
 }
 
 /**
@@ -87,34 +89,31 @@ static bool read_vision(host_comm::vision_measurement_t &out)
 }
 
 /**
- * @brief 根据 dy 调整摄像头俯仰角
+ * @brief 根据 dy 通过 PID 调整摄像头俯仰角
  *
  * @param state 动作状态机状态
  * @param dy 目标纵向偏差
+ * @param tick_ms 本次更新周期，单位毫秒
  */
-static void aim_camera(controller::action_state &state, int16_t dy)
+static void aim_camera(controller::action_state &state, int16_t dy, uint32_t tick_ms)
 {
-    if(abs(dy) <= 10)
+    if(abs(dy) <= 6)
     {
         state.kick.last_dy = 0;
         state.kick.last_dy_time = 0;
+        state.kick.cam_error = 0.0f;
+        state.kick.cam_rate = 0.0f;
+        state.kick.yaw_rate = 0.0f;
         return;
     }
 
-    uint32_t now = millis();
-    if(!state.kick.last_dy_time)
-    {
-        state.kick.last_dy_time = now;
-        state.kick.last_dy = dy;
-    }
-
-    uint32_t dt = max((uint32_t)1, (uint32_t)(now - state.kick.last_dy_time));
-    float d_term = CAM_D * (float)(dy - state.kick.last_dy) / (float)dt * 10.0f;
-    float output = constrain(CAM_P * (float)dy + d_term, -CAM_STEP_LIMIT, CAM_STEP_LIMIT);
-    set_camera(state, state.kick.cam_angle - output);
+    float dt = max((float)tick_ms * 1.0e-3f, 1.0e-3f);
+    state.kick.cam_error = (float)-dy;
+    state.kick.cam_rate = state.kick.cam_pid(state.kick.cam_error);
+    set_camera(state, state.kick.cam_angle + state.kick.cam_rate * dt);
 
     state.kick.last_dy = dy;
-    state.kick.last_dy_time = now;
+    state.kick.last_dy_time = millis();
 }
 
 /**
@@ -195,6 +194,7 @@ static void cancel_kick(controller::action_state &state, controller::action_io &
 static void prepare_kick(controller::action_state &state, controller::action_io &ctx)
 {
     state.kick = controller::kick_runtime{};
+    state.kick.cam_pid = PIDController{CAM_PID_P, CAM_PID_I, CAM_PID_D, CAM_PID_RAMP, CAM_PID_LIMIT};
     state.kick.target_yaw = ctx.status.yaw_angle;
     set_camera(state, CAM_INITIAL_ANGLE);
     set_frontier(state, FRONTIER_READY_ANGLE);
@@ -225,13 +225,16 @@ controller::balance_request controller::actions::update_kick_place(action_state 
     host_comm::vision_measurement_t vision;
     if(!read_vision(vision))
     {
-        set_camera(state, CAM_LOST_ANGLE);
+        state.kick.cam_error = 0.0f;
+        state.kick.cam_rate = 0.0f;
+        state.kick.yaw_rate = 0.0f;
         set_frontier(state, FRONTIER_KICK_ANGLE);
         return cmd;
     }
 
-    aim_camera(state, vision.dy);
+    aim_camera(state, vision.dy, tick_ms);
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
+    state.kick.yaw_rate = cmd.target.yaw_rate;
 
     if(state.kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
     {
@@ -301,13 +304,16 @@ controller::balance_request controller::actions::update_kick_run(action_state &s
     host_comm::vision_measurement_t vision;
     if(!read_vision(vision))
     {
-        set_camera(state, CAM_LOST_ANGLE);
+        state.kick.cam_error = 0.0f;
+        state.kick.cam_rate = 0.0f;
+        state.kick.yaw_rate = 0.0f;
         set_frontier(state, FRONTIER_KICK_ANGLE);
         return cmd;
     }
 
-    aim_camera(state, vision.dy);
+    aim_camera(state, vision.dy, tick_ms);
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
+    state.kick.yaw_rate = cmd.target.yaw_rate;
 
     if(state.kick.chased)
     {
