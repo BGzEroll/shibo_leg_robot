@@ -20,9 +20,11 @@ static constexpr float YAW_RATE_LIMIT = 0.9f;
 static constexpr float YAW_ALIGN_LIMIT = 10.0f * PI / 180.0f;
 static constexpr float RUN_FORWARD_MAX = 0.25f;
 static constexpr float RUN_BACK_VEL = -0.12f;
-static constexpr int16_t AIM_DX_LIMIT = 10;
-static constexpr int16_t PLACE_BALL_S2 = 40;
-static constexpr int16_t PLACE_KICK_DY = -10;
+static constexpr int16_t PLACE_READY_CAM_ANGLE = 55;
+static constexpr int16_t PLACE_READY_DX_LIMIT = 35;
+static constexpr int16_t PLACE_KICK_CAM_ANGLE = 38;
+static constexpr int16_t PLACE_KICK_DX_LIMIT = 18;
+static constexpr int16_t PLACE_KICK_DY_LIMIT = 18;
 static constexpr int16_t CHASE_BALL_S2 = 30;
 static constexpr int16_t RUN_KICK_DY = -5;
 static constexpr int16_t KICK_DY_MAX = 120;
@@ -56,7 +58,7 @@ static void set_frontier(controller::action_state &state, uint16_t angle)
     if(state.kick.frontier_angle == angle){return;}
 
     state.kick.frontier_angle = angle;
-    // ptk7350::frontier_servo.set_angle(angle);
+    ptk7350::frontier_servo.set_angle(angle);
 }
 
 /**
@@ -97,16 +99,6 @@ static bool read_vision(host_comm::vision_measurement_t &out)
  */
 static void aim_camera(controller::action_state &state, int16_t dy, uint32_t tick_ms)
 {
-    if(abs(dy) <= 6)
-    {
-        state.kick.last_dy = 0;
-        state.kick.last_dy_time = 0;
-        state.kick.cam_error = 0.0f;
-        state.kick.cam_rate = 0.0f;
-        state.kick.yaw_rate = 0.0f;
-        return;
-    }
-
     float dt = max((float)tick_ms * 1.0e-3f, 1.0e-3f);
     state.kick.cam_error = (float)-dy;
     state.kick.cam_rate = state.kick.cam_pid(state.kick.cam_error);
@@ -125,7 +117,6 @@ static void aim_camera(controller::action_state &state, int16_t dy, uint32_t tic
  */
 static float aim_yaw_rate(int16_t dx)
 {
-    if(abs(dx) < AIM_DX_LIMIT){return 0.0f;}
     return constrain(-(float)dx * YAW_AIM_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
 }
 
@@ -236,13 +227,21 @@ controller::balance_request controller::actions::update_kick_place(action_state 
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
     state.kick.yaw_rate = cmd.target.yaw_rate;
 
-    if(state.kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
+    bool place_aim_ready = abs(vision.dx) <= PLACE_KICK_DX_LIMIT && abs(vision.dy) <= PLACE_KICK_DY_LIMIT;
+    bool place_kick_ready = state.kick.cam_angle < (float)PLACE_KICK_CAM_ANGLE && place_aim_ready;
+    bool place_prepare_ready = state.kick.cam_angle < (float)PLACE_READY_CAM_ANGLE && abs(vision.dx) <= PLACE_READY_DX_LIMIT;
+
+    if(place_kick_ready)
     {
         if(!state.kick.kicking){trigger_kick(state);}
     }
-    else
+    else if(place_prepare_ready)
     {
         ready_kick(state);
+    }
+    else if(!state.kick.kicking)
+    {
+        set_frontier(state, FRONTIER_KICK_ANGLE);
     }
     return cmd;
 }

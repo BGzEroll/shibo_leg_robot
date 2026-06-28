@@ -13,24 +13,7 @@
 static constexpr uint32_t DEBUG_KICK_PRINT_INTERVAL_MS = 100;
 
 /**
- * @brief 将控制器模式编号转换为调试文本
- *
- * @param mode 控制器模式编号
- *
- * @return 模式文本
- */
-static const char *debug_mode_name(uint8_t mode)
-{
-	switch(mode)
-	{
-		case 5: return "KICK_PLACE";
-		case 6: return "KICK_RUN";
-		default: return "OTHER";
-	}
-}
-
-/**
- * @brief 周期打印踢球视觉 PID 调试数据
+ * @brief 周期打印踢球视觉调试数据
  *
  * @param arg RTOS 任务参数
  */
@@ -44,21 +27,11 @@ static void debug_task_entry(void *arg)
 		{
 			host_comm::vision_measurement_t vision;
 			bool vision_valid = host_comm::vision_latest(vision);
-			uint32_t age_ms = vision.timestamp_ms ? (uint32_t)(millis() - vision.timestamp_ms) : 0;
-
 			Serial.printf(
-				"kick_pid,t=%lu,mode=%s,phase=%u,vision=%u,age=%lu,dx=%d,dy=%d,err=%.2f,rate=%.2f,cam=%.2f,yaw=%.3f\n",
-				(unsigned long)millis(),
-				debug_mode_name(snapshot.mode),
-				snapshot.phase,
-				vision_valid ? 1 : 0,
-				(unsigned long)age_ms,
-				vision.dx,
-				vision.dy,
-				snapshot.kick_cam_error,
-				snapshot.kick_cam_rate,
+				"kick_cam,cam=%.2f,dx=%d,dy=%d\n",
 				snapshot.kick_cam_angle,
-				snapshot.kick_yaw_rate);
+				vision_valid ? vision.dx : 32767,
+				vision_valid ? vision.dy : 32767);
 		}
 		vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(DEBUG_KICK_PRINT_INTERVAL_MS));
 	}
