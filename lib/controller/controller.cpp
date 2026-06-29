@@ -25,6 +25,8 @@ static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
 static int16_t cam_last_angle = -1;
+static bool middle_calibration_requested = false;
+static portMUX_TYPE request_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /**
  * @brief 对输入值应用死区并重新归一化
@@ -85,6 +87,23 @@ static void sample_input()
 }
 
 /**
+ * @brief 在普通平衡模式下取出舵机中位校准请求
+ *
+ * @return 有待处理请求时返回 true
+ */
+static bool consume_middle_calibration_request()
+{
+    if(controller::actions_mode(action) != controller::mode_id::BALANCE){return false;}
+
+    bool requested = false;
+    portENTER_CRITICAL(&request_lock);
+    requested = middle_calibration_requested;
+    middle_calibration_requested = false;
+    portEXIT_CRITICAL(&request_lock);
+    return requested;
+}
+
+/**
  * @brief 更新摄像头舵机控制
  *
  * @param tick_ms 本次更新周期，单位毫秒
@@ -114,6 +133,19 @@ static void update_camera(uint32_t tick_ms)
 }
 
 /**
+ * @brief 请求执行舵机中位校准动作流程
+ *
+ * @return 请求写入成功时返回 true
+ */
+bool controller::request_middle_calibration()
+{
+    portENTER_CRITICAL(&request_lock);
+    middle_calibration_requested = true;
+    portEXIT_CRITICAL(&request_lock);
+    return true;
+}
+
+/**
  * @brief 执行一次上层控制器更新
  *
  * @param tick_ms 本次更新周期，单位毫秒
@@ -122,6 +154,7 @@ void controller::update(uint32_t tick_ms)
 {
     balance_core::get_status(status);
     sample_input();
+    input.middle_calibration_request = consume_middle_calibration_request();
     update_camera(tick_ms);
 
     controller::action_io ctx{input, status, leg, balance_info.max_linear_vel};

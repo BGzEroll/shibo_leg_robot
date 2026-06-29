@@ -300,6 +300,20 @@ void sts3032::move()
 }
 
 /**
+ * @brief 执行左右腿舵机中位校准前的扭矩切换
+ */
+void sts3032::calibrate_middle()
+{
+    set_torque_switch(SERVO_LEFT, 0);
+    delay(100);
+    set_torque_switch(SERVO_RIGHT, 0);
+    delay(1000);
+
+    set_torque_switch(SERVO_LEFT, 128);
+    set_torque_switch(SERVO_RIGHT, 128);
+}
+
+/**
  * @brief 初始化 STS3032 舵机总线和扭矩状态
  */
 void sts3032::init()

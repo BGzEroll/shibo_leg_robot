@@ -28,6 +28,7 @@ namespace sts3032
 	void set_torque_switch(uint8_t id, uint8_t type);
 	void set(uint8_t id, int16_t position, int16_t speed, uint8_t acc);
 	void move();
+	void calibrate_middle();
 	void init();
 }
 

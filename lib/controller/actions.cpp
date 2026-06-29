@@ -117,6 +117,12 @@ static balance_request update_balance(action_state &state, action_io &ctx)
         cmd.command.reset_reference = true;
     }
 
+    if(ctx.input.middle_calibration_request)
+    {
+        action::begin_mode(state, mode_id::MIDDLE_CALIBRATION);
+        return cmd;
+    }
+
     bool modifier = (ctx.input.buttons & BTN_SELECT) != 0;
     if(modifier && (ctx.input.pressed_buttons & BTN_X))
     {
@@ -203,6 +209,9 @@ controller::balance_request controller::actions_update(action_state &state, acti
 
         case mode_id::KICK_RUN:
             return action::update_kick_run(state, ctx, tick_ms);
+
+        case mode_id::MIDDLE_CALIBRATION:
+            return action::update_middle_calibration(state, ctx, tick_ms);
 
         case mode_id::STOP:
             if(ctx.input.buttons & BTN_RB)

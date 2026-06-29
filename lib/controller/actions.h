@@ -16,7 +16,8 @@ namespace controller
 		JUMP,
 		STOP,
 		KICK_PLACE,
-		KICK_RUN
+		KICK_RUN,
+		MIDDLE_CALIBRATION
 	};
 
 	enum class jump_command : uint8_t
@@ -36,6 +37,7 @@ namespace controller
 		float axes[6]{};
 		float linear_cmd = 0.0f;
 		float yaw_cmd = 0.0f;
+		bool middle_calibration_request = false;
 	};
 
 	struct leg_runtime
