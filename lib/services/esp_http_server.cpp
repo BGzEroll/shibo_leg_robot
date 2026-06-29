@@ -47,11 +47,51 @@ static String json_escape(const String &value)
 }
 
 /**
+ * @brief 返回主控制台 HTML
+ *
+ * @return HTML 文本
+ */
+static String console_html()
+{
+    String extra_modules;
+    if(!wifi_dev::config_portal_active())
+    {
+        extra_modules = "";
+    }
+
+    return String(R"HTML(<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Console</title>
+<style>
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
+main{max-width:760px;margin:0 auto;padding:22px 16px}
+h1{font-size:26px;margin:0 0 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.module{display:block;background:white;border:1px solid #d5dce8;border-radius:6px;padding:16px;text-decoration:none;color:#111827}
+.module strong{display:block;font-size:18px;margin-bottom:6px}.module span{color:#64748b;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<h1>Console</h1>
+<section class="grid">
+<a class="module" href="/wifi"><strong>WiFi 设置</strong><span>网络连接</span></a>
+<a class="module" href="/bluetooth"><strong>蓝牙设置</strong><span>Xbox 手柄</span></a>
+)HTML") + extra_modules + R"HTML(</section>
+</main>
+</body>
+</html>)HTML";
+}
+
+/**
  * @brief 返回 WiFi 配置页 HTML
  *
  * @return HTML 文本
  */
-static String portal_html()
+static String wifi_html()
 {
     return R"HTML(<!doctype html>
 <html lang="zh-CN">
@@ -62,7 +102,7 @@ static String portal_html()
 <style>
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f5f7fb;color:#172033}
 main{max-width:520px;margin:0 auto;padding:24px 18px}
-h1{font-size:24px;margin:0 0 18px}
+h1{font-size:24px;margin:0 0 18px}nav{margin-bottom:14px}
 button,input{font:inherit}
 button{border:0;background:#1d4ed8;color:white;padding:10px 14px;border-radius:6px}
 button:disabled{opacity:.55}
@@ -77,6 +117,7 @@ a{color:#1d4ed8}
 </head>
 <body>
 <main>
+<nav><a href="/">Console</a></nav>
 <h1>Shibo WiFi</h1>
 <button id="scan">扫描周围 WiFi</button>
 <div id="list"></div>
@@ -116,18 +157,18 @@ document.getElementById('form').onsubmit=async(e)=>{
 }
 
 /**
- * @brief 返回 STA 控制台 HTML
+ * @brief 返回蓝牙设置页 HTML
  *
  * @return HTML 文本
  */
-static String dashboard_html()
+static String bluetooth_html()
 {
     return R"HTML(<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Shibo Console</title>
+<title>Shibo Bluetooth</title>
 <style>
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
 main{max-width:760px;margin:0 auto;padding:22px 16px}
@@ -146,7 +187,7 @@ a{color:#2563eb;text-decoration:none}
 </head>
 <body>
 <main>
-<header><h1>Shibo Console</h1><a href="/wifi">WiFi 设置</a></header>
+<header><h1>蓝牙设置</h1><a href="/">Console</a></header>
 <section class="panel">
 <div class="row"><span>手柄连接</span><strong id="connected">--</strong></div>
 <div class="row"><span>目标地址</span><strong id="target">--</strong></div>
@@ -197,7 +238,7 @@ refreshStatus(); setInterval(refreshStatus,2000);
  */
 static void handle_root()
 {
-    server.send(200, "text/html; charset=utf-8", wifi_dev::config_portal_active() ? portal_html() : dashboard_html());
+    server.send(200, "text/html; charset=utf-8", console_html());
 }
 
 /**
@@ -205,7 +246,15 @@ static void handle_root()
  */
 static void handle_wifi_root()
 {
-    server.send(200, "text/html; charset=utf-8", portal_html());
+    server.send(200, "text/html; charset=utf-8", wifi_html());
+}
+
+/**
+ * @brief 处理蓝牙设置页面请求
+ */
+static void handle_bluetooth_root()
+{
+    server.send(200, "text/html; charset=utf-8", bluetooth_html());
 }
 
 /**
@@ -317,6 +366,7 @@ void esp_http_server::init()
 
     server.on("/", HTTP_GET, handle_root);
     server.on("/wifi", HTTP_GET, handle_wifi_root);
+    server.on("/bluetooth", HTTP_GET, handle_bluetooth_root);
     server.on("/scan", HTTP_GET, handle_wifi_scan);
     server.on("/wifi/scan", HTTP_GET, handle_wifi_scan);
     server.on("/connect", HTTP_POST, handle_connect);
