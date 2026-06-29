@@ -65,7 +65,6 @@ static balance_request update_boot(action_state &state, action_io &ctx, uint32_t
         case action::INIT:
             action::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
             action::reset_leg(ctx.leg);
-            cmd.command.reset_reference = true;
             state.phase = action::INIT_PREPARE;
             break;
 
@@ -75,7 +74,6 @@ static balance_request update_boot(action_state &state, action_io &ctx, uint32_t
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
-                cmd.command.reset_reference = true;
                 state.phase = action::INIT_RECOVER;
             }
             break;
@@ -84,7 +82,6 @@ static balance_request update_boot(action_state &state, action_io &ctx, uint32_t
             cmd = action::recover_command(state, ctx);
             if(action::recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                cmd.command.reset_reference = true;
                 action::begin_mode(state, mode_id::BALANCE);
             }
             break;
@@ -114,7 +111,6 @@ static balance_request update_balance(action_state &state, action_io &ctx)
        fabsf(ctx.input.linear_cmd) < ctx.max_linear_vel * 0.05f)
     {
         action::reset_leg(ctx.leg);
-        cmd.command.reset_reference = true;
     }
 
     if(ctx.input.middle_calibration_request)
@@ -185,9 +181,7 @@ controller::balance_request controller::actions_update(action_state &state, acti
     if(state.mode != mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
     {
         action::begin_mode(state, mode_id::STOP);
-        balance_request cmd;
-        cmd.command.reset_reference = true;
-        return cmd;
+        return balance_request{};
     }
 
     switch(state.mode)

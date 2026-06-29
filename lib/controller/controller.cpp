@@ -26,6 +26,7 @@ static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
 static int16_t cam_last_angle = -1;
 static bool middle_calibration_requested = false;
+static bool middle_calibration_finished = false;
 static portMUX_TYPE request_lock = portMUX_INITIALIZER_UNLOCKED;
 
 /**
@@ -133,6 +134,30 @@ static void update_camera(uint32_t tick_ms)
 }
 
 /**
+ * @brief 查询舵机中位校准流程是否已经成功执行
+ *
+ * @return 已成功执行时返回 true
+ */
+bool controller::middle_calibration_success()
+{
+    bool finished = false;
+    portENTER_CRITICAL(&request_lock);
+    finished = middle_calibration_finished;
+    portEXIT_CRITICAL(&request_lock);
+    return finished;
+}
+
+/**
+ * @brief 标记舵机中位校准流程已经成功执行
+ */
+void controller::mark_middle_calibration_success()
+{
+    portENTER_CRITICAL(&request_lock);
+    middle_calibration_finished = true;
+    portEXIT_CRITICAL(&request_lock);
+}
+
+/**
  * @brief 请求执行舵机中位校准动作流程
  *
  * @return 请求写入成功时返回 true
@@ -141,6 +166,7 @@ bool controller::request_middle_calibration()
 {
     portENTER_CRITICAL(&request_lock);
     middle_calibration_requested = true;
+    middle_calibration_finished = false;
     portEXIT_CRITICAL(&request_lock);
     return true;
 }

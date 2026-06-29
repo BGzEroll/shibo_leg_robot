@@ -292,6 +292,7 @@ address=<BLE_ADDRESS>
 ```text
 GET  /servo/middle
 POST /api/servo/middle-calibration
+GET  /api/servo/middle-calibration/status
 ```
 
 点击执行按钮后，页面会向 `/api/servo/middle-calibration` 发送 POST 请求。服务端只向控制器提交请求：
@@ -300,15 +301,19 @@ POST /api/servo/middle-calibration
 controller::request_middle_calibration();
 ```
 
+请求提交成功后，页面每 `500` ms 轮询 `/api/servo/middle-calibration/status`。如果 `10` 秒内收到 `success=true`，页面显示“校准成功”；否则显示“校准失败：10 秒内未收到成功回报”。
+
 控制器收到请求后，不会由 HTTP 任务直接操作舵机，而是在 `BALANCE` 模式下进入 `MIDDLE_CALIBRATION` 动作流程：
 
-1. 先打开腿部舵机扭矩，并下发左右腿 MIN 姿态。
-2. 等待 `1000` ms 后进入坐下运动阶段。
-3. 坐下运动阶段固定等待 `2000` ms，不再用 pitch 角提前触发校准。
-4. 坐下完成后关闭电机输出并清空平衡参考。
-5. 执行 `sts3032::calibrate_middle()`。
-6. 发送起立姿态。
-7. 进入 recover，稳定后回到 `BALANCE`。
+1. 先保持平衡、电机和转向开启，并下发左右腿 MIN 姿态。
+2. 等待左右腿当前位置接近 `2048`，误差在 `50` 以内。
+3. 进入坐下运动阶段前打开腿部扭矩，并关闭平衡、开启电机直出。
+4. 坐下运动阶段持续下发左右电机 `-0.15f` 直出目标，直到 pitch 角绝对值达到 `0.25`。
+5. 进入 `DONE` 后等待 `500` ms，执行 `set_torque(0)`。
+6. 进入 `DONE` 后累计等待到 `2000` ms，执行 `sts3032::calibrate_middle()`。
+7. `sts3032::calibrate_middle()` 执行结束后再等约 `500` ms，由控制器标记校准成功。
+8. 校准动作不会主动起立退出，保持类似 `SIT` 的坐下状态，等待用户按 `RB`。
+9. 按 `RB` 后发送起立姿态，进入 recover，稳定后回到 `BALANCE`。
 
 当前 `sts3032::calibrate_middle()` 行为：
 
@@ -321,6 +326,15 @@ controller::request_middle_calibration();
 ```json
 {
   "ok": true
+}
+```
+
+状态查询响应：
+
+```json
+{
+  "ok": true,
+  "success": true
 }
 ```
 
@@ -374,6 +388,7 @@ GET  /api/xbox/status   查询 Xbox 连接状态和目标地址
 GET  /api/ble/scan      扫描 BLE 设备
 POST /api/xbox/select   保存目标 Xbox 地址并重建连接
 POST /api/servo/middle-calibration 提交舵机中位校准流程
+GET  /api/servo/middle-calibration/status 查询舵机中位校准是否成功
 ```
 
 ## 当前优点

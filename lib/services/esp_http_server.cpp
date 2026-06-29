@@ -276,11 +276,27 @@ static String servo_calibration_html()
 			<script>
 				const runBtn=document.getElementById('run');
 				const statusEl=document.getElementById('status');
+				const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+				async function waitCalibration(){
+					const start=Date.now();
+					while(Date.now()-start<10000){
+						await sleep(500);
+						const data=await (await fetch('/api/servo/middle-calibration/status')).json();
+						if(data.ok&&data.success){return true;}
+					}
+					return false;
+				}
 				runBtn.onclick=async()=>{
 					runBtn.disabled=true; statusEl.textContent='正在执行...';
 					try{
 						const data=await (await fetch('/api/servo/middle-calibration',{method:'POST'})).json();
-						statusEl.textContent=data.ok?'已提交中位校准流程':(data.error||'执行失败');
+						if(!data.ok){
+							statusEl.textContent=data.error||'执行失败';
+							runBtn.disabled=false;
+							return;
+						}
+						statusEl.textContent='已提交中位校准流程，等待完成...';
+						statusEl.textContent=await waitCalibration()?'校准成功':'校准失败：10 秒内未收到成功回报';
 					}catch(e){statusEl.textContent='执行失败';}
 					runBtn.disabled=false;
 				};
@@ -435,6 +451,17 @@ static void handle_servo_middle_calibration()
 }
 
 /**
+ * @brief 处理舵机中位校准状态查询请求
+ */
+static void handle_servo_middle_calibration_status()
+{
+    String json = "{\"ok\":true,\"success\":";
+    json += controller::middle_calibration_success() ? "true" : "false";
+    json += '}';
+    server.send(200, "application/json", json);
+}
+
+/**
  * @brief 初始化 HTTP 服务并注册路由
  */
 void esp_http_server::init()
@@ -455,6 +482,7 @@ void esp_http_server::init()
     server.on("/api/ble/scan", HTTP_GET, handle_ble_scan);
     server.on("/api/xbox/select", HTTP_POST, handle_xbox_select);
     server.on("/api/servo/middle-calibration", HTTP_POST, handle_servo_middle_calibration);
+    server.on("/api/servo/middle-calibration/status", HTTP_GET, handle_servo_middle_calibration_status);
     server.begin();
     server_started = true;
 }

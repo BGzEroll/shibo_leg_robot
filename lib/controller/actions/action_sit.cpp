@@ -1,5 +1,6 @@
 #include "action_sit.h"
 
+#include "controller.h"
 #include "sts3032.h"
 #include "xbox.h"
 
@@ -7,8 +8,9 @@ namespace action = controller::actions;
 
 static constexpr int16_t SERVO_MIDDLE_COUNT = 2048;
 static constexpr int16_t SIT_MIDDLE_READY_ERROR = 50;
-static constexpr uint32_t SIT_POSE_PREPARE_MS = 1000;
-static constexpr uint32_t MIDDLE_CALIBRATION_MOVING_MS = 2000;
+static constexpr uint32_t MIDDLE_CALIBRATION_TORQUE_OFF_MS = 500;
+static constexpr uint32_t MIDDLE_CALIBRATION_RUN_MS = 2000;
+static constexpr uint32_t MIDDLE_CALIBRATION_SUCCESS_MS = 2500;
 
 /**
  * @brief 判断左右腿舵机当前位置是否已经接近中位
@@ -21,6 +23,21 @@ static bool servo_middle_ready()
     int16_t left_error = abs(sts3032::status[0].position - SERVO_MIDDLE_COUNT);
     int16_t right_error = abs(sts3032::status[1].position - SERVO_MIDDLE_COUNT);
     return left_error <= SIT_MIDDLE_READY_ERROR && right_error <= SIT_MIDDLE_READY_ERROR;
+}
+
+/**
+ * @brief 生成坐下直出电机请求
+ *
+ * @param cmd 平衡请求
+ */
+static void set_sit_direct_output(controller::balance_request &cmd)
+{
+    cmd.command.enable_balance = false;
+    cmd.command.enable_motor = true;
+    cmd.command.enable_steering = false;
+    cmd.command.direct_output = true;
+    cmd.target.direct_left = -0.15f;
+    cmd.target.direct_right = -0.15f;
 }
 
 /**
@@ -41,7 +58,6 @@ controller::balance_request controller::actions::update_sit(action_state &state,
             cmd.command.enable_balance = true;
             cmd.command.enable_motor = true;
             cmd.command.enable_steering = true;
-            // cmd.command.reset_reference = true;
             set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
             state.timer = 0;
             state.phase = action::INIT_PREPARE;
@@ -55,12 +71,7 @@ controller::balance_request controller::actions::update_sit(action_state &state,
             {
                 state.timer = 0;
                 set_torque(2);
-                cmd.command.enable_balance = false;
-                cmd.command.enable_motor = true;
-                cmd.command.enable_steering = false;
-                cmd.command.direct_output = true;
-                cmd.target.direct_left = -0.15f;
-                cmd.target.direct_right = -0.15f;
+                set_sit_direct_output(cmd);
                 state.phase = action::MOVING;
             }
             break;
@@ -71,18 +82,13 @@ controller::balance_request controller::actions::update_sit(action_state &state,
             {
                 state.timer = 0;
                 cmd.command.enable_motor = false;
-                // cmd.command.reset_reference = true;
                 state.phase = action::DONE;
                 break;
             }
-            cmd.command.enable_motor = true;
-            cmd.command.direct_output = true;
-            cmd.target.direct_left = -0.15f;
-            cmd.target.direct_right = -0.15f;
+            set_sit_direct_output(cmd);
             break;
 
         case action::DONE:
-            // cmd.command.reset_reference = true;
             if((state.timer += tick_ms) >= 10000 || (ctx.input.buttons & BTN_LS))
             {
                 set_torque(0);
@@ -92,7 +98,6 @@ controller::balance_request controller::actions::update_sit(action_state &state,
             {
                 set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
                 reset_leg(ctx.leg);
-                // cmd.command.reset_reference = true;
                 state.phase = action::EXIT_PREPARE;
             }
             break;
@@ -103,7 +108,6 @@ controller::balance_request controller::actions::update_sit(action_state &state,
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
-                // cmd.command.reset_reference = true;
                 state.phase = action::EXIT_RECOVER;
             }
             break;
@@ -112,7 +116,6 @@ controller::balance_request controller::actions::update_sit(action_state &state,
             cmd = recover_command(state, ctx);
             if(recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                // cmd.command.reset_reference = true;
                 begin_mode(state, mode_id::BALANCE);
             }
             break;
@@ -139,7 +142,6 @@ controller::balance_request controller::actions::update_middle_calibration(actio
             cmd.command.enable_balance = true;
             cmd.command.enable_motor = true;
             cmd.command.enable_steering = true;
-            cmd.command.reset_reference = true;
             set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
             state.timer = 0;
             state.phase = action::INIT_PREPARE;
@@ -149,45 +151,50 @@ controller::balance_request controller::actions::update_middle_calibration(actio
             cmd.command.enable_balance = true;
             cmd.command.enable_motor = true;
             cmd.command.enable_steering = true;
-            if((state.timer += tick_ms) >= SIT_POSE_PREPARE_MS)
+            if(servo_middle_ready())
             {
                 state.timer = 0;
                 set_torque(2);
-                cmd.command.enable_balance = false;
-                cmd.command.enable_motor = true;
-                cmd.command.enable_steering = false;
-                cmd.command.direct_output = true;
-                cmd.target.direct_left = -0.15f;
-                cmd.target.direct_right = -0.15f;
+                set_sit_direct_output(cmd);
                 state.phase = action::MOVING;
             }
             break;
 
         case action::MOVING:
             state.timer += tick_ms;
-            if(state.timer >= MIDDLE_CALIBRATION_MOVING_MS)
+            if(fabsf(ctx.status.pitch_angle) >= 0.25f)
             {
                 state.timer = 0;
                 cmd.command.enable_motor = false;
-                cmd.command.reset_reference = true;
                 state.phase = action::DONE;
                 break;
             }
-            cmd.command.enable_motor = true;
-            cmd.command.direct_output = true;
-            cmd.target.direct_left = -0.15f;
-            cmd.target.direct_right = -0.15f;
+            set_sit_direct_output(cmd);
             break;
 
         case action::DONE:
-            cmd.command.reset_reference = true;
-            sts3032::calibrate_middle();
-            set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
-            reset_leg(ctx.leg);
-            state.timer = 0;
-            state.elapsed = 0;
-            state.ready_timer = 0;
-            state.phase = action::EXIT_PREPARE;
+            state.timer += tick_ms;
+            if(state.timer >= MIDDLE_CALIBRATION_TORQUE_OFF_MS && state.ready_timer == 0)
+            {
+                set_torque(0);
+                state.ready_timer = 1;
+            }
+            if(state.timer >= MIDDLE_CALIBRATION_RUN_MS && state.elapsed == 0)
+            {
+                sts3032::calibrate_middle();
+                state.elapsed = 1;
+            }
+            if(state.timer >= MIDDLE_CALIBRATION_SUCCESS_MS && state.elapsed == 1)
+            {
+                controller::mark_middle_calibration_success();
+                state.elapsed = 2;
+            }
+            if(ctx.input.buttons & BTN_RB)
+            {
+                set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+                reset_leg(ctx.leg);
+                state.phase = action::EXIT_PREPARE;
+            }
             break;
 
         case action::EXIT_PREPARE:
@@ -196,7 +203,6 @@ controller::balance_request controller::actions::update_middle_calibration(actio
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
-                cmd.command.reset_reference = true;
                 state.phase = action::EXIT_RECOVER;
             }
             break;
@@ -205,10 +211,10 @@ controller::balance_request controller::actions::update_middle_calibration(actio
             cmd = recover_command(state, ctx);
             if(recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                cmd.command.reset_reference = true;
                 begin_mode(state, mode_id::BALANCE);
             }
             break;
     }
+
     return cmd;
 }
