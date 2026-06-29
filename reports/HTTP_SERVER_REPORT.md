@@ -302,11 +302,13 @@ controller::request_middle_calibration();
 
 控制器收到请求后，不会由 HTTP 任务直接操作舵机，而是在 `BALANCE` 模式下进入 `MIDDLE_CALIBRATION` 动作流程：
 
-1. 先按 SIT 流程让小车坐下。
-2. 坐下完成后关闭电机输出并清空平衡参考。
-3. 执行 `sts3032::calibrate_middle()`。
-4. 发送起立姿态。
-5. 进入 recover，稳定后回到 `BALANCE`。
+1. 先打开腿部舵机扭矩，并下发左右腿 MIN 姿态。
+2. 等待 `1000` ms 后进入坐下运动阶段。
+3. 坐下运动阶段固定等待 `2000` ms，不再用 pitch 角提前触发校准。
+4. 坐下完成后关闭电机输出并清空平衡参考。
+5. 执行 `sts3032::calibrate_middle()`。
+6. 发送起立姿态。
+7. 进入 recover，稳定后回到 `BALANCE`。
 
 当前 `sts3032::calibrate_middle()` 行为：
 

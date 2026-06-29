@@ -205,10 +205,10 @@ static int32_t parse_sync_read(uint8_t *ids, uint8_t n, sts3032::status_t *statu
 
         // 解析位置
         status[i].id = ids[i];
-        status[i].position = (int16_t)((buf[offset+6]<<8)|buf[offset+5]);
+        status[i].position = (int16_t)((buf[offset + 6] << 8) | buf[offset + 5]);
 
         // 解析负载（带方向，直接在这里计算正负）
-        int16_t raw_load = (int16_t)((buf[offset+10]<<8)|buf[offset+9]);
+        int16_t raw_load = (int16_t)((buf[offset + 10] << 8) | buf[offset + 9]);
         int16_t duty = raw_load & 0x03FF;        // BIT0~BIT9 占空比
         uint8_t dir = (raw_load >> 10) & 0x01;   // BIT10 方向
         status[i].load = dir ? -duty : duty;    // 方向位1反转，用负值表示
@@ -227,7 +227,7 @@ void sts3032::get_position_and_load()
     uint8_t ids[] = {SERVO_LEFT, SERVO_RIGHT};
 
     sync_read(ids, SERVO_NUM, 0x38, 6);
-    parse_sync_read(ids, 2, status);
+    parse_sync_read(ids, SERVO_NUM, status);
 }
 
 /**
@@ -320,12 +320,12 @@ void sts3032::init()
 {
     servo_uart.init();
 
-    // 中位校准前先关闭扭矩输出
-    set_torque_switch(SERVO_LEFT, 0);
-    delay(100);
-    set_torque_switch(SERVO_RIGHT, 0);
-    delay(1000);
+    // // 中位校准前先关闭扭矩输出
+    // set_torque_switch(SERVO_LEFT, 0);
+    // delay(100);
+    // set_torque_switch(SERVO_RIGHT, 0);
+    // delay(1000);
 
-    set_torque_switch(SERVO_LEFT, 128);
-    set_torque_switch(SERVO_RIGHT, 128);
+    // set_torque_switch(SERVO_LEFT, 128);
+    // set_torque_switch(SERVO_RIGHT, 128);
 }
