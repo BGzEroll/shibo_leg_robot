@@ -410,10 +410,6 @@ static void control_step(uint32_t tick_ms)
         update_linear_reference(dt);
         update_yaw_reference(dt);
     }
-    else
-    {
-        reset_reference();
-    }
 
     core.status.timestamp_us = sensor.timestamp_us;
     core.status.pitch_angle = lqi::state.pitch_angle;
