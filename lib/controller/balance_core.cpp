@@ -569,11 +569,12 @@ void balance_core::core_task_entry(void *arg)
 void balance_core::control_task_entry(void *arg)
 {
     TickType_t last_wake_time = xTaskGetTickCount();
+    uint32_t period_ms = 2;
 
     while(true)
     {
-        controller::update(1);
-        control_step(1);
-        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(1));
+        controller::update(period_ms);
+        control_step(period_ms);
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(period_ms));
     }
 }

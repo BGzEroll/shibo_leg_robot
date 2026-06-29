@@ -36,8 +36,8 @@ static void set_sit_direct_output(controller::balance_request &cmd)
     cmd.command.enable_motor = true;
     cmd.command.enable_steering = false;
     cmd.command.direct_output = true;
-    cmd.target.direct_left = -0.15f;
-    cmd.target.direct_right = -0.15f;
+    cmd.target.direct_left = -0.05f;
+    cmd.target.direct_right = -0.05f;
 }
 
 /**
