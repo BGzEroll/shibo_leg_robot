@@ -90,7 +90,6 @@ namespace controller
 		float cam_error = 0.0f;
 		float cam_rate = 0.0f;
 		float yaw_rate = 0.0f;
-		PIDController cam_pid{0.75f, 0.0f, 0.0f, 420.0f, 90.0f};
 	};
 
 	struct action_state

@@ -7,17 +7,19 @@
 
 namespace action = controller::actions;
 
-static constexpr float CAM_INITIAL_ANGLE = 38.0f;
-static constexpr float CAM_LOST_ANGLE = 38.0f;
-static constexpr float CAM_PID_P = 0.75f;
-static constexpr float CAM_PID_I = 0.0f;
-static constexpr float CAM_PID_D = 0.0f;
-static constexpr float CAM_PID_RAMP = 420.0f;
-static constexpr float CAM_PID_LIMIT = 90.0f;
-static constexpr float YAW_AIM_KP = 0.024f;
+static constexpr float CAM_INITIAL_ANGLE = 90.0f;
+static constexpr float CAM_LOST_ANGLE = 60.0f;
+static constexpr float CAM_PD_P = 0.07f;
+static constexpr float CAM_PD_D = 0.05f;
+static constexpr float CAM_PD_STEP_LIMIT = 10.0f;
+static constexpr int32_t CAM_AIM_DEADBAND = 10;
+static constexpr float YAW_AIM_P = 0.5f;
 static constexpr float YAW_ALIGN_KP = 1.2f;
 static constexpr float YAW_RATE_LIMIT = 0.9f;
 static constexpr float YAW_ALIGN_LIMIT = 10.0f * PI / 180.0f;
+static constexpr int32_t YAW_AIM_DEADBAND = 50;
+static constexpr float JOY_RATE_LIMIT = 100.0f;
+static constexpr float CHASE_LINEAR_KP = 0.002f;
 static constexpr float RUN_FORWARD_MAX = 0.25f;
 static constexpr float RUN_BACK_VEL = -0.12f;
 static constexpr int16_t PLACE_BALL_S2 = 40;
@@ -28,8 +30,7 @@ static constexpr int16_t KICK_DY_MAX = 120;
 static constexpr int16_t OB_BALL_DY = 120;
 static constexpr uint16_t FRONTIER_READY_ANGLE = 100;
 static constexpr uint16_t FRONTIER_KICK_ANGLE = 0;
-static constexpr uint32_t KICK_HOLD_MS = 320;
-static constexpr uint32_t KICK_LOST_RESET_MS = 3000;
+static constexpr uint32_t KICK_HOLD_MS = 0;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
 
 /**
@@ -89,21 +90,38 @@ static bool read_vision(host_comm::vision_measurement_t &out)
 }
 
 /**
- * @brief 根据 dy 通过 PID 调整摄像头俯仰角
+ * @brief 根据 dy 按 Tommy 的 PD 步进调整摄像头俯仰角
  *
  * @param state 动作状态机状态
  * @param dy 目标纵向偏差
- * @param tick_ms 本次更新周期，单位毫秒
  */
-static void aim_camera(controller::action_state &state, int16_t dy, uint32_t tick_ms)
+static void aim_camera(controller::action_state &state, int16_t dy)
 {
-    float dt = max((float)tick_ms * 1.0e-3f, 1.0e-3f);
-    state.kick.cam_error = (float)-dy;
-    state.kick.cam_rate = state.kick.cam_pid(state.kick.cam_error);
-    set_camera(state, state.kick.cam_angle + state.kick.cam_rate * dt);
+    if(abs((int32_t)dy) <= CAM_AIM_DEADBAND)
+    {
+        state.kick.last_dy = 0;
+        state.kick.cam_error = 0.0f;
+        state.kick.cam_rate = 0.0f;
+        return;
+    }
+
+    uint32_t now = millis();
+    if(!state.kick.last_dy_time)
+    {
+        state.kick.last_dy_time = now;
+        state.kick.last_dy = dy;
+    }
+
+    uint32_t dt = max((uint32_t)1, (uint32_t)(now - state.kick.last_dy_time));
+    float p_term = CAM_PD_P * (float)dy;
+    float d_term = CAM_PD_D * (float)(dy - state.kick.last_dy) / (float)dt * 10.0f;
+    float pd_output = constrain(p_term + d_term, -CAM_PD_STEP_LIMIT, CAM_PD_STEP_LIMIT);
 
     state.kick.last_dy = dy;
-    state.kick.last_dy_time = millis();
+    state.kick.last_dy_time = now;
+    state.kick.cam_error = (float)dy;
+    state.kick.cam_rate = -pd_output;
+    set_camera(state, state.kick.cam_angle - pd_output);
 }
 
 /**
@@ -115,7 +133,27 @@ static void aim_camera(controller::action_state &state, int16_t dy, uint32_t tic
  */
 static float aim_yaw_rate(int16_t dx)
 {
-    return constrain(-(float)dx * YAW_AIM_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
+    if(abs((int32_t)dx) < YAW_AIM_DEADBAND){return 0.0f;}
+
+    float direction = (dx > 0) ? -1.0f : 1.0f;
+    float joy_rate = constrain((float)abs((int32_t)dx) * YAW_AIM_P, 0.0f, JOY_RATE_LIMIT) * direction;
+    return constrain(joy_rate * (YAW_RATE_LIMIT / JOY_RATE_LIMIT), -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
+}
+
+/**
+ * @brief 处理丢失目标后的追踪复位
+ *
+ * @param state 动作状态机状态
+ */
+static void reset_lost_target(controller::action_state &state)
+{
+    state.kick.cam_error = 0.0f;
+    state.kick.cam_rate = 0.0f;
+    state.kick.yaw_rate = 0.0f;
+    state.kick.last_dy = 0;
+    state.kick.last_dy_time = 0;
+    set_camera(state, CAM_LOST_ANGLE);
+    set_frontier(state, FRONTIER_KICK_ANGLE);
 }
 
 /**
@@ -183,7 +221,6 @@ static void cancel_kick(controller::action_state &state, controller::action_io &
 static void prepare_kick(controller::action_state &state, controller::action_io &ctx)
 {
     state.kick = controller::kick_runtime{};
-    state.kick.cam_pid = PIDController{CAM_PID_P, CAM_PID_I, CAM_PID_D, CAM_PID_RAMP, CAM_PID_LIMIT};
     state.kick.target_yaw = ctx.status.yaw_angle;
     set_camera(state, CAM_INITIAL_ANGLE);
     set_frontier(state, FRONTIER_READY_ANGLE);
@@ -214,18 +251,11 @@ controller::balance_request controller::actions::update_kick_place(action_state 
     host_comm::vision_measurement_t vision;
     if(!read_vision(vision))
     {
-        state.kick.cam_error = 0.0f;
-        state.kick.cam_rate = 0.0f;
-        state.kick.yaw_rate = 0.0f;
-        if(!state.kick.last_dy_time || (uint32_t)(millis() - state.kick.last_dy_time) >= KICK_LOST_RESET_MS)
-        {
-            set_camera(state, CAM_LOST_ANGLE);
-        }
-        set_frontier(state, FRONTIER_KICK_ANGLE);
+        reset_lost_target(state);
         return cmd;
     }
 
-    aim_camera(state, vision.dy, tick_ms);
+    aim_camera(state, vision.dy);
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
     state.kick.yaw_rate = cmd.target.yaw_rate;
 
@@ -297,14 +327,11 @@ controller::balance_request controller::actions::update_kick_run(action_state &s
     host_comm::vision_measurement_t vision;
     if(!read_vision(vision))
     {
-        state.kick.cam_error = 0.0f;
-        state.kick.cam_rate = 0.0f;
-        state.kick.yaw_rate = 0.0f;
-        set_frontier(state, FRONTIER_KICK_ANGLE);
+        reset_lost_target(state);
         return cmd;
     }
 
-    aim_camera(state, vision.dy, tick_ms);
+    aim_camera(state, vision.dy);
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
     state.kick.yaw_rate = cmd.target.yaw_rate;
 
@@ -322,7 +349,7 @@ controller::balance_request controller::actions::update_kick_run(action_state &s
     }
 
     int16_t ob_y = OB_BALL_DY - vision.dy;
-    float forward = constrain((float)ob_y * 0.002f, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
+    float forward = constrain((float)ob_y * CHASE_LINEAR_KP, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
     cmd.target.linear_vel = forward;
     ready_kick(state);
     return cmd;
