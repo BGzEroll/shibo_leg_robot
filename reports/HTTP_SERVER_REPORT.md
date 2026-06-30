@@ -301,12 +301,12 @@ controller::request_middle_calibration();
 
 请求提交成功后，页面每 `500` ms 轮询 `/api/servo/middle-calibration/status`。如果 `10` 秒内收到 `success=true`，页面显示“校准成功”；否则显示“校准失败：10 秒内未收到成功回报”。
 
-控制器收到请求后，不会由 HTTP 任务直接操作舵机，而是在 `BALANCE` 模式下进入 `MIDDLE_CALIBRATION` 动作流程：
+控制器收到请求后，不会由 HTTP 任务直接操作舵机，而是在 `BALANCE` 或 `SIT` 模式下进入 `MIDDLE_CALIBRATION` 动作流程。如果当前已经在坐下流程中，并且还处于 `PREPARE`、`INIT_PREPARE`、`MOVING` 或 `DONE` 阶段，则复用当前坐下状态切换到校准流程；如果已经进入起立恢复阶段，则不再接管该次请求。
 
 1. 先保持平衡、电机和转向开启，并下发左右腿 MIN 姿态。
 2. 等待左右腿当前位置接近 `2048`，误差在 `50` 以内。
 3. 进入坐下运动阶段前打开腿部扭矩，并关闭平衡、开启电机直出。
-4. 坐下运动阶段持续下发左右电机 `-0.15f` 直出目标，直到 pitch 角绝对值达到 `0.25`。
+4. 坐下运动阶段持续下发左右电机 `-0.05f` 直出目标，直到 pitch 角绝对值达到 `0.25`。
 5. 进入 `DONE` 后等待 `500` ms，执行 `set_torque(0)`。
 6. 进入 `DONE` 后累计等待到 `2000` ms，执行 `sts3032::calibrate_middle()`。
 7. `sts3032::calibrate_middle()` 执行结束后再等约 `500` ms，由控制器标记校准成功。

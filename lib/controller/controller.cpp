@@ -88,13 +88,14 @@ static void sample_input()
 }
 
 /**
- * @brief 在普通平衡模式下取出舵机中位校准请求
+ * @brief 在可校准模式下取出舵机中位校准请求
  *
  * @return 有待处理请求时返回 true
  */
 static bool consume_middle_calibration_request()
 {
-    if(controller::actions_mode(action) != controller::mode_id::BALANCE){return false;}
+    controller::mode_id mode = controller::actions_mode(action);
+    if(mode != controller::mode_id::BALANCE && mode != controller::mode_id::SIT){return false;}
 
     bool requested = false;
     portENTER_CRITICAL(&request_lock);
