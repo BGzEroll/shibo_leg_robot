@@ -141,7 +141,7 @@ static String wifi_html()
 				scanBtn.onclick=async()=>{
 					scanBtn.disabled=true; statusEl.textContent='正在扫描...'; list.innerHTML='';
 					try{
-						const res=await fetch('/wifi/scan');
+						const res=await fetch('/api/wifi/scan');
 						const aps=await res.json();
 						list.innerHTML=aps.map(ap=>`<div class="network"><span>${ap.ssid}<br><small>${ap.rssi} dBm ${ap.secure?'加密':'开放'}</small></span><button data-ssid="${ap.ssid.replace(/"/g,'&quot;')}">选择</button></div>`).join('') || '<p>未发现 WiFi</p>';
 						list.querySelectorAll('button').forEach(btn=>btn.onclick=()=>document.getElementById('ssid').value=btn.dataset.ssid);
@@ -152,7 +152,7 @@ static String wifi_html()
 				document.getElementById('form').onsubmit=async(e)=>{
 					e.preventDefault(); statusEl.textContent='正在连接...';
 					const body=new URLSearchParams(new FormData(e.target));
-					const res=await fetch('/connect',{method:'POST',body});
+					const res=await fetch('/api/wifi/connect',{method:'POST',body});
 					const data=await res.json();
 					statusEl.textContent=data.ok ? `连接成功，IP: ${data.ip}` : `连接失败: ${data.error||'请检查密码'}`;
 				};
@@ -474,9 +474,7 @@ void esp_http_server::init()
     server.on("/wifi", HTTP_GET, handle_wifi_root);
     server.on("/bluetooth", HTTP_GET, handle_bluetooth_root);
     server.on("/servo/middle", HTTP_GET, handle_servo_calibration_root);
-    server.on("/scan", HTTP_GET, handle_wifi_scan);
-    server.on("/wifi/scan", HTTP_GET, handle_wifi_scan);
-    server.on("/connect", HTTP_POST, handle_connect);
+    server.on("/api/wifi/scan", HTTP_GET, handle_wifi_scan);
     server.on("/api/wifi/connect", HTTP_POST, handle_connect);
     server.on("/api/xbox/status", HTTP_GET, handle_xbox_status);
     server.on("/api/ble/scan", HTTP_GET, handle_ble_scan);

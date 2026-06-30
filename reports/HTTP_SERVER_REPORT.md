@@ -132,13 +132,11 @@ AP 配网模式和 Station 模式都使用同一个 Console。AP 配网模式下
 
 ```text
 GET  /wifi
-GET  /scan
-GET  /wifi/scan
-POST /connect
+GET  /api/wifi/scan
 POST /api/wifi/connect
 ```
 
-`/scan` 和 `/wifi/scan` 目前是同一个处理函数，返回 JSON 数组：
+`/api/wifi/scan` 返回 JSON 数组：
 
 ```json
 [
@@ -150,7 +148,7 @@ POST /api/wifi/connect
 ]
 ```
 
-`/connect` 和 `/api/wifi/connect` 也是同一个处理函数，请求参数：
+`/api/wifi/connect` 请求参数：
 
 ```text
 ssid=<SSID>
@@ -380,9 +378,7 @@ GET  /                  返回 Console 主页面
 GET  /wifi              返回 WiFi 设置页面
 GET  /bluetooth         返回蓝牙设置页面
 GET  /servo/middle      返回舵机中位校准页面
-GET  /scan              扫描 WiFi，兼容旧入口
-GET  /wifi/scan         扫描 WiFi
-POST /connect           连接并保存 WiFi，兼容旧入口
+GET  /api/wifi/scan     扫描 WiFi
 POST /api/wifi/connect  连接并保存 WiFi
 GET  /api/xbox/status   查询 Xbox 连接状态和目标地址
 GET  /api/ble/scan      扫描 BLE 设备
@@ -396,7 +392,7 @@ GET  /api/servo/middle-calibration/status 查询舵机中位校准是否成功
 1. WiFi 配网不再需要重启，成功后延迟关闭 AP 并切到 STA。
 2. HTTP service 统一托管网页，上层不需要在 `start.cpp` 中分别管理 WiFi 任务。
 3. `wifi_dev` 和 `xbox_dev` 仍然保留设备所有权，HTTP server 只做服务编排。
-4. `/scan`、`/connect` 保留兼容入口，同时新增了更清晰的 `/api/...` 入口。
+4. WiFi 扫描和连接已经统一迁移到 `/api/wifi/...` 入口，页面路由只负责返回 HTML。
 5. Console 主页面已经把功能拆成子模块入口，后续增加网页功能时不用继续堆在根页面。
 6. 当前页面已经能覆盖最需要的实机操作：配置 WiFi、扫描 BLE、选择 Xbox 手柄、执行舵机中位校准。
 
