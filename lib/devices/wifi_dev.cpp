@@ -11,10 +11,20 @@ static constexpr const char *AP_PASS = "12345678";
 static constexpr uint32_t START_CONNECT_TIMEOUT_MS = 8000;
 static constexpr uint32_t PORTAL_CONNECT_TIMEOUT_MS = 12000;
 static constexpr uint32_t STA_ONLY_DELAY_MS = 2000;
+static constexpr wifi_power_t WIFI_TX_POWER = WIFI_POWER_8_5dBm;
 
 static bool portal_active = false;
 static bool pending_sta_only = false;
 static uint32_t sta_only_at_ms = 0;
+
+/**
+ * @brief 应用 WiFi 低功耗配置
+ */
+static void apply_low_power_settings()
+{
+    WiFi.setSleep(true);
+    WiFi.setTxPower(WIFI_TX_POWER);
+}
 
 /**
  * @brief 从 NVS 读取保存的 WiFi 凭据
@@ -80,6 +90,7 @@ static bool wait_station_connected(uint32_t timeout_ms)
 static bool connect_station(const String &ssid, const String &password, wifi_mode_t mode, uint32_t timeout_ms)
 {
     WiFi.mode(mode);
+    apply_low_power_settings();
     WiFi.begin(ssid.c_str(), password.c_str());
     return wait_station_connected(timeout_ms);
 }
@@ -90,6 +101,7 @@ static bool connect_station(const String &ssid, const String &password, wifi_mod
 static void start_config_portal()
 {
     WiFi.mode(WIFI_AP_STA);
+    apply_low_power_settings();
     WiFi.softAP(AP_SSID, AP_PASS);
     portal_active = true;
 }
@@ -101,6 +113,7 @@ static void switch_to_station_only()
 {
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
+    apply_low_power_settings();
     portal_active = false;
     pending_sta_only = false;
 }
@@ -176,6 +189,7 @@ void wifi_dev::init()
 {
     WiFi.persistent(false);
     WiFi.setAutoReconnect(true);
+    apply_low_power_settings();
 
     String ssid;
     String password;

@@ -49,12 +49,12 @@ wifi_dev::init()
 server.begin()
 ```
 
-任务创建后，`esp_http_server::task_entry()` 每 10 ms 执行：
+任务创建后，`esp_http_server::task_entry()` 每 50 ms 执行：
 
 ```text
 wifi_dev::update()
 server.handleClient()
-vTaskDelay(10 ms)
+vTaskDelay(50 ms)
 ```
 
 `wifi_dev::update()` 目前只负责处理“配网成功后延迟切换到纯 STA 模式”的维护逻辑。
@@ -66,6 +66,8 @@ vTaskDelay(10 ms)
 ```cpp
 WiFi.persistent(false);
 WiFi.setAutoReconnect(true);
+WiFi.setSleep(true);
+WiFi.setTxPower(WIFI_POWER_8_5dBm);
 ```
 
 随后尝试读取 NVS：
@@ -393,8 +395,10 @@ GET  /api/servo/middle-calibration/status 查询舵机中位校准是否成功
 2. HTTP service 统一托管网页，上层不需要在 `start.cpp` 中分别管理 WiFi 任务。
 3. `wifi_dev` 和 `xbox_dev` 仍然保留设备所有权，HTTP server 只做服务编排。
 4. WiFi 扫描和连接已经统一迁移到 `/api/wifi/...` 入口，页面路由只负责返回 HTML。
-5. Console 主页面已经把功能拆成子模块入口，后续增加网页功能时不用继续堆在根页面。
-6. 当前页面已经能覆盖最需要的实机操作：配置 WiFi、扫描 BLE、选择 Xbox 手柄、执行舵机中位校准。
+5. WiFi 已开启 modem sleep，并把发射功率降到 `WIFI_POWER_8_5dBm`，降低配置功能常驻时的功耗和无线干扰。
+6. HTTP 任务空转周期为 `50` ms，减少网页服务空闲时的调度开销。
+7. Console 主页面已经把功能拆成子模块入口，后续增加网页功能时不用继续堆在根页面。
+8. 当前页面已经能覆盖最需要的实机操作：配置 WiFi、扫描 BLE、选择 Xbox 手柄、执行舵机中位校准。
 
 ## 当前限制和风险
 

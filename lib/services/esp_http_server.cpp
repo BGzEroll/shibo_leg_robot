@@ -7,6 +7,7 @@
 #include <WiFi.h>
 
 static constexpr uint32_t BLE_SCAN_MS = 4000;
+static constexpr uint32_t HTTP_TASK_DELAY_MS = 50;
 static constexpr uint8_t BLE_SCAN_MAX = 24;
 
 static WebServer server(80);
@@ -499,6 +500,6 @@ void esp_http_server::task_entry(void *arg)
         {
             server.handleClient();
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(HTTP_TASK_DELAY_MS));
     }
 }
