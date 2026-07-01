@@ -351,7 +351,8 @@ static void solve_output()
         return;
     }
 
-    float x[6] = {
+    float x[6] =
+    {
         lqi::state.pitch_angle,
         lqi::state.pitch_rate,
         lqi::state.avg_linear_vel - lqi::ref.linear_vel,

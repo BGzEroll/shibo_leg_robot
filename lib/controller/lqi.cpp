@@ -5,7 +5,8 @@ namespace lqi
     void init();
 }
 
-static const float lqi_gain_poly[12][4] = {
+static const float lqi_gain_poly[12][4] =
+{
     { -19.78318794f,  2.96741131f, -3.67412914f, -3.30769108f},
     {  45.57101193f, -13.86222792f, -0.81410746f, -0.10765136f},
     {  848.88274746f, -221.91446497f,  20.87630740f, -1.71800905f},

@@ -63,7 +63,8 @@ class i2c_dev
 };
 
 // 静态 i2c 设备表（资源池）
-static i2c_dev i2c_devs[] = {
+static i2c_dev i2c_devs[] =
+{
     i2c_dev(0, 18, 19, 400000),
     i2c_dev(1, 5, 23, 400000),
 };
