@@ -60,9 +60,9 @@ class xbox
 
         enum class vibration_state
         {
-            off,
-            start,
-            trigger
+            OFF,
+            START,
+            TRIGGER
         };
 
         vibration_state vibration_state;
