@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include "XboxSeriesXControllerESP32_asukiaaa.hpp"
-#include <string.h>
 
 #define BTN_A           0x0001
 #define BTN_B           0x0002

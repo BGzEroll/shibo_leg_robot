@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include "SimpleFOC.h"
-#include "bus/i2c_bus.h"
 
 namespace motor
 {

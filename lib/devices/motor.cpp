@@ -1,5 +1,7 @@
 #include "motor.h"
 
+#include "bus/i2c_bus.h"
+
 static BLDCDriver3PWM left_driver = BLDCDriver3PWM(32, 33, 25, 22);
 static BLDCDriver3PWM right_driver = BLDCDriver3PWM(26, 27, 14, 12);
 static MagneticSensorI2C left_encoder = MagneticSensorI2C(AS5600_I2C);

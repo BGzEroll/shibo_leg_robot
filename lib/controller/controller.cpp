@@ -4,6 +4,7 @@
 #include "balance_core.h"
 #include "host_comm.h"
 #include "ptk7350.h"
+#include "xbox.h"
 #include "xbox_dev.h"
 
 namespace balance_core

@@ -2,8 +2,6 @@
 #define MPU6050_H
 
 #include "bus/i2c_bus.h"
-#include <math.h>
-#include <string.h>
 
 class mpu6050
 {
@@ -11,7 +9,7 @@ class mpu6050
         mpu6050(i2c_bus &i2c, uint8_t addr, float acc_coef);
 
     public:
-        void init(uint8_t cail = 0);
+        void init(bool cail = false);
         void update();
 
     public:

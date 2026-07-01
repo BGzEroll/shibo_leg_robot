@@ -1,5 +1,6 @@
 #include "xbox_dev.h"
 
+#include "xbox.h"
 #include "esp_timer.h"
 #include <NimBLEDevice.h>
 #include <NimBLEUtils.h>

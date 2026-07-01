@@ -1,5 +1,7 @@
 #include "xbox.h"
 
+#include <string.h>
+
 /**
  * @brief 构造 Xbox 手柄驱动对象
  *

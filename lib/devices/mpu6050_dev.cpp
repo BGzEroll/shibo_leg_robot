@@ -1,5 +1,7 @@
 #include "mpu6050_dev.h"
 
+#include "bus/i2c_bus.h"
+
 static i2c_bus imu_i2c(1);
 mpu6050 mpu6050_dev::imu(imu_i2c, 0x68, 0.02f);
 static QueueHandle_t mpu6050_data_queue = nullptr;
@@ -19,7 +21,7 @@ QueueHandle_t mpu6050_dev::queue()
  */
 void mpu6050_dev::init()
 {
-    imu.init(1);
+    imu.init(true);
 
     mpu6050_data_queue = xQueueCreate(1, sizeof(mpu6050_dev::data));
 }

@@ -1,7 +1,7 @@
 ﻿#ifndef XBOX_DEV_H
 #define XBOX_DEV_H
 
-#include "xbox.h"
+#include <Arduino.h>
 
 namespace xbox_dev
 {

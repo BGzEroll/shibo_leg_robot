@@ -1,5 +1,9 @@
 #include "mpu6050.h"
 
+#include "bus/i2c_bus.h"
+#include <math.h>
+#include <string.h>
+
 #define DEG2RAD                     (3.1415926f / 180.0f)
 #define SQUARE(X)                   ((X) * (X))
 
@@ -29,7 +33,7 @@ mpu6050::mpu6050(i2c_bus &i2c, uint8_t addr, float acc_coef)
  *
  * @param cail 是否进行陀螺仪校准
  */
-void mpu6050::init(uint8_t cail)
+void mpu6050::init(bool cail)
 {
     i2c.init();
     write_cfg(MPU6050_SMPLRT_DIV, 0x00);
