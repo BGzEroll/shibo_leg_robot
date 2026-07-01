@@ -5,10 +5,10 @@
 
 namespace led_dev
 {
-	extern led board_led;
+    extern led board_led;
 
-	void init();
-	void task_entry(void *arg);
+    void init();
+    void task_entry(void *arg);
 }
 
 #endif

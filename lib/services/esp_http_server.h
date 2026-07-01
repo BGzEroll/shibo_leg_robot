@@ -5,8 +5,8 @@
 
 namespace esp_http_server
 {
-	void init();
-	void task_entry(void *arg);
+    void init();
+    void task_entry(void *arg);
 }
 
 #endif

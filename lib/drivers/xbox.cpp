@@ -12,7 +12,7 @@ xbox::xbox(const char *mac)
     memset(axes, 0, sizeof(axes));
 
     was_connected = false;
-    vibration_state = vibration_state_t::off;
+    vibration_state = vibration_state::off;
     vibration_duration = 0;
     vibration_start_time = 0;
 }
@@ -57,7 +57,7 @@ void xbox::set_key_vibration(uint8_t power, uint32_t duration)
 
     vibration_duration = duration;
 
-    if(vibration_state != vibration_state_t::off)
+    if(vibration_state != vibration_state::off)
     {
         reporter.v.power.center = 0;
         reporter.v.power.shake = 0;
@@ -74,7 +74,7 @@ void xbox::set_key_vibration(uint8_t power, uint32_t duration)
     reporter.v.timeActive = 10;
     core.writeHIDReport(reporter);
 
-    vibration_state = vibration_state_t::start;
+    vibration_state = vibration_state::start;
     vibration_start_time = millis();
 }
 
@@ -107,7 +107,7 @@ void xbox::set_trigger_vibration(uint8_t trigger, uint32_t duration)
         reporter.v.power.center = 0;
         reporter.v.power.shake = 0;
         core.writeHIDReport(reporter);
-        vibration_state = vibration_state_t::off;
+        vibration_state = vibration_state::off;
         return;
     }
 
@@ -121,7 +121,7 @@ void xbox::set_trigger_vibration(uint8_t trigger, uint32_t duration)
     reporter.v.timeActive = 10;
     core.writeHIDReport(reporter);
 
-    vibration_state = vibration_state_t::trigger;
+    vibration_state = vibration_state::trigger;
     vibration_start_time = millis();
 }
 
@@ -155,14 +155,14 @@ void xbox::process_notification()
  */
 void xbox::update_vibration()
 {
-    if(vibration_state != vibration_state_t::off)
+    if(vibration_state != vibration_state::off)
     {
         if(millis() - vibration_start_time >= vibration_duration)
         {
             reporter.v.power.center = 0;
             reporter.v.power.shake = 0;
             core.writeHIDReport(reporter);
-            vibration_state = vibration_state_t::off;
+            vibration_state = vibration_state::off;
         }
     }
 }

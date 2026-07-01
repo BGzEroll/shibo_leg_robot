@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 
-class uart_bus {
+class uart_bus
+{
     public:
         explicit uart_bus(uint8_t bus_id = 0);
 

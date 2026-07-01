@@ -5,19 +5,19 @@
 
 namespace mpu6050_dev
 {
-	struct data
-	{
-		uint32_t timestamp_us;
-		float temperature;
-		float acc[3];
-		float gyro[3];
-		float angle[3];
-	};
+    struct data
+    {
+        uint32_t timestamp_us;
+        float temperature;
+        float acc[3];
+        float gyro[3];
+        float angle[3];
+    };
 
-	extern mpu6050 imu;
+    extern mpu6050 imu;
 
-	QueueHandle_t queue();
-	void init();
+    QueueHandle_t queue();
+    void init();
 }
 
 #endif

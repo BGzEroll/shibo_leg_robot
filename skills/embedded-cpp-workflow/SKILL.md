@@ -1,6 +1,6 @@
 ---
 name: embedded-cpp-workflow
-description: 用户偏好的通用嵌入式 C/C++ 代码风格技能。用于 Codex 修改、补全、重构或评审 Arduino、PlatformIO、ESP32、FreeRTOS、STM32、驱动、设备封装、控制循环、串口协议、RTOS 任务等嵌入式代码时，按用户指定的 snake_case 命名、显式定宽类型、换行括号、完整缩进、中文 Doxygen 注释、头文件 namespace 声明、.cpp 命名空间限定定义、不使用 using 简写、API/init/task 排序和风格检查规则写代码。
+description: 用户偏好的通用嵌入式 C/C++ 代码风格技能。用于 Codex 修改、补全、重构或评审 Arduino、PlatformIO、ESP32、FreeRTOS、STM32、驱动、设备封装、控制循环、串口协议、RTOS 任务等嵌入式代码时，按用户指定的 snake_case 命名、显式定宽类型、换行括号、完整缩进、中文 Doxygen 注释、头文件 namespace 声明、.cpp 命名空间限定定义、不使用 using 简写、API/init/task 排序和风格检查规则写代码；命名以下划线分隔为准，允许在分段中保留库类型、协议缩写和专有名词原始大小写。
 ---
 
 # 嵌入式代码风格

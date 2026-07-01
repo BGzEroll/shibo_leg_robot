@@ -172,7 +172,7 @@ balance_core::set_command(request.command);
 
 ## balance_request 语义
 
-`balance_request` 是动作层内部表达意图的结构；它由 `target_t` 和 `command_t` 组成，`controller::update()` 会把两部分分别传给 `balance_core::set_target()` 和 `balance_core::set_command()`。
+`balance_request` 是动作层内部表达意图的结构；它由 `balance_core::target` 和 `balance_core::command` 组成，`controller::update()` 会把两部分分别传给 `balance_core::set_target()` 和 `balance_core::set_command()`。
 
 - `target.linear_vel`：上层希望的线速度目标。
 - `target.yaw_rate`：上层希望的 yaw rate 目标。

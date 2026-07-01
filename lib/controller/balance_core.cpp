@@ -10,12 +10,12 @@
 
 namespace balance_core
 {
-	void init();
+    void init();
 }
 
 namespace lqi
 {
-	void init();
+    void init();
 }
 
 struct sensor_snapshot
@@ -35,8 +35,8 @@ static bool motor_output_enabled = true;
 
 struct core_runtime
 {
-    balance_core::target_t target;
-    balance_core::command_t command;
+    balance_core::target target;
+    balance_core::command command;
     balance_core::status_snapshot status;
     LowPassFilter vel_filter{0.008f};
     float last_height = 0.0f;
@@ -440,7 +440,7 @@ static void control_step(uint32_t tick_ms)
  *
  * @param target 目标值
  */
-void balance_core::set_target(const balance_core::target_t &target)
+void balance_core::set_target(const balance_core::target &target)
 {
     core.target = target;
 }
@@ -450,7 +450,7 @@ void balance_core::set_target(const balance_core::target_t &target)
  *
  * @param command 控制命令
  */
-void balance_core::set_command(const balance_core::command_t &command)
+void balance_core::set_command(const balance_core::command &command)
 {
     core.command = command;
 }
@@ -472,9 +472,9 @@ bool balance_core::get_status(balance_core::status_snapshot &out)
  *
  * @return 平衡核心信息快照
  */
-balance_core::info_t balance_core::get_info()
+balance_core::info balance_core::get_info()
 {
-    balance_core::info_t info;
+    balance_core::info info;
     info.max_linear_vel = lqi::limit.max_linear_vel;
     info.max_steer_vel = lqi::limit.max_steer_vel;
     info.wheel_radius = lqi::car.r;

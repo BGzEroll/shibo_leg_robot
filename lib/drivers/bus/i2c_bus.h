@@ -4,7 +4,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-class i2c_bus {
+class i2c_bus
+{
     public:
         explicit i2c_bus(uint8_t bus_id = 0);
 

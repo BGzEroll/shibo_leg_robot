@@ -5,8 +5,6 @@
 #include "ptk7350.h"
 #include "xbox.h"
 
-namespace action = controller::actions;
-
 static constexpr float CAM_INITIAL_ANGLE = 90.0f;
 static constexpr float CAM_LOST_ANGLE = 60.0f;
 static constexpr float CAM_PD_P = 0.07f;
@@ -73,7 +71,7 @@ static controller::balance_request base_command(controller::action_io &ctx)
     cmd.command.enable_balance = true;
     cmd.command.enable_motor = true;
     cmd.command.enable_steering = true;
-    action::run_leg_control(ctx);
+    controller::actions::run_leg_control(ctx);
     return cmd;
 }
 
@@ -84,7 +82,7 @@ static controller::balance_request base_command(controller::action_io &ctx)
  *
  * @return 当前视觉有效时返回 true
  */
-static bool read_vision(host_comm::vision_measurement_t &out)
+static bool read_vision(host_comm::vision_measurement &out)
 {
     return host_comm::vision_latest(out);
 }
@@ -208,8 +206,8 @@ static void update_kick_hold(controller::action_state &state, uint32_t tick_ms)
 static void cancel_kick(controller::action_state &state, controller::action_io &ctx)
 {
     set_frontier(state, FRONTIER_KICK_ANGLE);
-    action::reset_leg(ctx.leg);
-    action::begin_mode(state, controller::mode_id::BALANCE);
+    controller::actions::reset_leg(ctx.leg);
+    controller::actions::begin_mode(state, controller::mode_id::BALANCE);
 }
 
 /**
@@ -224,7 +222,7 @@ static void prepare_kick(controller::action_state &state, controller::action_io 
     state.kick.target_yaw = ctx.status.yaw_angle;
     set_camera(state, CAM_INITIAL_ANGLE);
     set_frontier(state, FRONTIER_READY_ANGLE);
-    state.phase = action::MOVING;
+    state.phase = controller::actions::MOVING;
 }
 
 /**
@@ -236,19 +234,19 @@ static void prepare_kick(controller::action_state &state, controller::action_io 
  *
  * @return 生成的平衡请求
  */
-controller::balance_request controller::actions::update_kick_place(action_state &state, action_io &ctx, uint32_t tick_ms)
+controller::balance_request controller::actions::update_kick_place(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    balance_request cmd = base_command(ctx);
+    controller::balance_request cmd = base_command(ctx);
     if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
     {
         cancel_kick(state, ctx);
         return cmd;
     }
 
-    if(state.phase == action::PREPARE){prepare_kick(state, ctx);}
+    if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     update_kick_hold(state, tick_ms);
 
-    host_comm::vision_measurement_t vision;
+    host_comm::vision_measurement vision;
     if(!read_vision(vision))
     {
         reset_lost_target(state);
@@ -279,16 +277,16 @@ controller::balance_request controller::actions::update_kick_place(action_state 
  *
  * @return 生成的平衡请求
  */
-controller::balance_request controller::actions::update_kick_run(action_state &state, action_io &ctx, uint32_t tick_ms)
+controller::balance_request controller::actions::update_kick_run(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    balance_request cmd = base_command(ctx);
+    controller::balance_request cmd = base_command(ctx);
     if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
     {
         cancel_kick(state, ctx);
         return cmd;
     }
 
-    if(state.phase == action::PREPARE){prepare_kick(state, ctx);}
+    if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     if(state.kick.post_kick)
     {
         if(state.kick.kicking)
@@ -305,7 +303,7 @@ controller::balance_request controller::actions::update_kick_run(action_state &s
         state.kick.post_timer += tick_ms;
         if(state.kick.post_timer < RUN_AFTER_KICK_MS)
         {
-            float err = action::angle_error(state.kick.target_yaw, ctx.status.yaw_angle);
+            float err = controller::actions::angle_error(state.kick.target_yaw, ctx.status.yaw_angle);
             if(fabsf(err) < YAW_ALIGN_LIMIT)
             {
                 state.kick.aligned = true;
@@ -324,7 +322,7 @@ controller::balance_request controller::actions::update_kick_run(action_state &s
         state.kick.aligned = false;
     }
 
-    host_comm::vision_measurement_t vision;
+    host_comm::vision_measurement vision;
     if(!read_vision(vision))
     {
         reset_lost_target(state);

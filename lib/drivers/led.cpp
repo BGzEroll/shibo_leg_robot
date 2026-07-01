@@ -6,7 +6,9 @@
  * @param pin 引脚号
  */
 led::led(uint8_t pin)
-    : pin(pin){}
+    : pin(pin)
+{
+}
 
 /**
  * @brief 初始化 LED 引脚

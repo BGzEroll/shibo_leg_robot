@@ -7,7 +7,7 @@
 
 namespace host_comm
 {
-	void init();
+    void init();
 }
 
 static constexpr int16_t VISION_LOST_VALUE = 32767;
@@ -20,7 +20,7 @@ static uint8_t tx_buf[160];
 static uint32_t send_timer = 0;
 static uart_bus host_uart(0);
 static portMUX_TYPE vision_lock = portMUX_INITIALIZER_UNLOCKED;
-static host_comm::vision_measurement_t vision_measurement;
+static host_comm::vision_measurement vision_snapshot;
 
 /**
  * @brief 获取上位机遥控输入队列
@@ -39,10 +39,10 @@ QueueHandle_t host_comm::remote_queue()
  *
  * @return 当前视觉测量有效时返回 true
  */
-bool host_comm::vision_latest(vision_measurement_t &out)
+bool host_comm::vision_latest(vision_measurement &out)
 {
     portENTER_CRITICAL(&vision_lock);
-    out = vision_measurement;
+    out = vision_snapshot;
     portEXIT_CRITICAL(&vision_lock);
 
     if(!out.valid){return false;}
@@ -89,14 +89,14 @@ static void parse_vision(uint8_t *frame)
     if(frame[3] != 4){return;}
 
     uint8_t *p = &frame[4];
-    host_comm::vision_measurement_t data;
+    host_comm::vision_measurement data;
     data.dx = (int16_t)(p[0] | (p[1] << 8));
     data.dy = (int16_t)(p[2] | (p[3] << 8));
     data.timestamp_ms = millis();
     data.valid = data.dx != VISION_LOST_VALUE && data.dy != VISION_LOST_VALUE;
 
     portENTER_CRITICAL(&vision_lock);
-    vision_measurement = data;
+    vision_snapshot = data;
     portEXIT_CRITICAL(&vision_lock);
 }
 

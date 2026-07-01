@@ -1,7 +1,5 @@
 #include "action_jump.h"
 
-namespace action = controller::actions;
-
 /**
  * @brief 根据跳跃阶段生成跳跃过程中的平衡请求
  *
@@ -33,7 +31,7 @@ static controller::balance_request update_jump_command(controller::action_state 
         push_ramp_ms = 240;
     }
 
-    if(state.phase == action::PUSH)
+    if(state.phase == controller::actions::PUSH)
     {
         float ramp = constrain((float)state.timer / (float)push_ramp_ms, 0.0f, 1.0f);
         state.jump.linear_cmd = (float)state.jump.linear_dir * push_vel * ramp;
@@ -46,24 +44,24 @@ static controller::balance_request update_jump_command(controller::action_state 
     cmd.target.linear_vel = state.jump.linear_cmd;
     if(yaw_jump)
     {
-        float err = action::angle_error(state.jump.target_yaw, ctx.status.yaw_angle);
+        float err = controller::actions::angle_error(state.jump.target_yaw, ctx.status.yaw_angle);
         float ff = 0.0f;
         float kp = state.jump.turn_dir == 0 ? 3.0f : 1.0f;
         float max_rate = state.jump.turn_dir == 0 ? 1.8f : 0.6f;
 
         if(state.jump.turn_dir != 0)
         {
-            if(state.phase == action::PUSH){ff = 1.2f; kp = 1.4f; max_rate = 1.8f;}
-            if(state.phase == action::FLY){ff = 6.4f; kp = 2.0f; max_rate = 6.4f;}
-            if(state.phase == action::LAND){kp = 0.35f; max_rate = 0.4f;}
-            if(state.phase == action::RECOVER){kp = 0.8f; max_rate = 0.5f;}
+            if(state.phase == controller::actions::PUSH){ff = 1.2f; kp = 1.4f; max_rate = 1.8f;}
+            if(state.phase == controller::actions::FLY){ff = 6.4f; kp = 2.0f; max_rate = 6.4f;}
+            if(state.phase == controller::actions::LAND){kp = 0.35f; max_rate = 0.4f;}
+            if(state.phase == controller::actions::RECOVER){kp = 0.8f; max_rate = 0.5f;}
         }
 
         state.jump.yaw_cmd = constrain((float)state.jump.turn_dir * ff + kp * err, -max_rate, max_rate);
         cmd.target.yaw_rate = state.jump.yaw_cmd;
     }
 
-    if(state.jump.linear_dir == 0 || state.phase != action::PUSH){cmd.command.suppress_linear_feedback = true;}
+    if(state.jump.linear_dir == 0 || state.phase != controller::actions::PUSH){cmd.command.suppress_linear_feedback = true;}
     if(!yaw_jump){cmd.command.suppress_yaw_feedback = true;}
     return cmd;
 }
@@ -77,52 +75,52 @@ static controller::balance_request update_jump_command(controller::action_state 
  *
  * @return 生成的平衡请求
  */
-controller::balance_request controller::actions::update_jump(action_state &state, action_io &ctx, uint32_t tick_ms)
+controller::balance_request controller::actions::update_jump(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    balance_request cmd = update_jump_command(state, ctx);
+    controller::balance_request cmd = update_jump_command(state, ctx);
 
     switch(state.phase)
     {
-        case action::PREPARE:
-            state.jump.target_yaw = wrap_pi(ctx.status.yaw_angle +
+        case controller::actions::PREPARE:
+            state.jump.target_yaw = controller::actions::wrap_pi(ctx.status.yaw_angle +
                                             (float)state.jump.turn_dir * PI * 0.5f);
-            set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 450, 250);
+            controller::actions::set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 450, 250);
             cmd.command.reset_yaw_integral = true;
-            state.phase = action::PUSH;
+            state.phase = controller::actions::PUSH;
             state.timer = 0;
             break;
 
-        case action::PUSH:
+        case controller::actions::PUSH:
         {
             uint32_t wait_ms = state.jump.linear_dir > 0 ? 650 : (state.jump.linear_dir < 0 ? 700 : 200);
             if((state.timer += tick_ms) >= wait_ms)
             {
-                set_pose(SERVO_LEFT_MAX + 20, SERVO_RIGHT_MAX - 20, 0, 0);
+                controller::actions::set_pose(SERVO_LEFT_MAX + 20, SERVO_RIGHT_MAX - 20, 0, 0);
                 state.timer = 0;
-                state.phase = action::FLY;
+                state.phase = controller::actions::FLY;
             }
             break;
         }
 
-        case action::FLY:
+        case controller::actions::FLY:
             if((state.timer += tick_ms) >= 130)
             {
-                set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 0, 0);
+                controller::actions::set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 0, 0);
                 state.timer = 0;
-                state.phase = action::LAND;
+                state.phase = controller::actions::LAND;
             }
             break;
 
-        case action::LAND:
+        case controller::actions::LAND:
             if((state.timer += tick_ms) >= 260)
             {
                 state.timer = 0;
                 state.elapsed = 0;
-                state.phase = action::RECOVER;
+                state.phase = controller::actions::RECOVER;
             }
             break;
 
-        case action::RECOVER:
+        case controller::actions::RECOVER:
             state.elapsed += tick_ms;
             if(fabsf(ctx.status.pitch_angle) < 0.18f &&
                fabsf(ctx.status.pitch_rate) < 1.6f)
@@ -137,7 +135,7 @@ controller::balance_request controller::actions::update_jump(action_state &state
             if(state.timer >= 80 || state.elapsed >= 350)
             {
                 cmd.command.reset_yaw_integral = true;
-                begin_mode(state, mode_id::BALANCE);
+                controller::actions::begin_mode(state, controller::mode_id::BALANCE);
             }
             break;
     }

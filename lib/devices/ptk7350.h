@@ -10,8 +10,8 @@
 
 namespace ptk7350
 {
-	extern pwm_servo cam_servo;
-	extern pwm_servo frontier_servo;
+    extern pwm_servo cam_servo;
+    extern pwm_servo frontier_servo;
 }
 
 #endif

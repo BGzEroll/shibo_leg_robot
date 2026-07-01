@@ -8,19 +8,19 @@
 
 namespace balance_core
 {
-	void init();
+    void init();
 }
 
 namespace host_comm
 {
-	void init();
+    void init();
 }
 
 static controller::action_state action;
 static controller::leg_runtime leg;
 static controller::control_input input;
 static balance_core::status_snapshot status;
-static balance_core::info_t balance_info;
+static balance_core::info balance_info;
 static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;

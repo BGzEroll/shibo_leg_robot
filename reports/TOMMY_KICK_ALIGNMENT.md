@@ -2,7 +2,7 @@
 
 本文档对照 `/home/bgzerol/esp32-arduino/shibo-tommy-code/src/main.cpp` 中的踢球逻辑，说明当前项目 `lib/controller/actions/action_kick.cpp` 的行为是否已经对齐。
 
-结论：当前项目已经把原地踢球和运动踢球的核心行为语义对齐到 Tommy 逻辑，包括 `dy` 控相机、`dx` 控车身转向、挡板准备/踢球时机、丢球后相机低头和关闭挡板。由于当前项目已经拆成 `host_comm -> actions -> balance_core` 的接口框架，运动踢球里的前进、转向、踢后回正和后退是按当前 `balance_core::target_t` 做了等效映射，不是逐行照搬 Tommy 的 `joyx/joyy` 全局变量写法。
+结论：当前项目已经把原地踢球和运动踢球的核心行为语义对齐到 Tommy 逻辑，包括 `dy` 控相机、`dx` 控车身转向、挡板准备/踢球时机、丢球后相机低头和关闭挡板。由于当前项目已经拆成 `host_comm -> actions -> balance_core` 的接口框架，运动踢球里的前进、转向、踢后回正和后退是按当前 `balance_core::target` 做了等效映射，不是逐行照搬 Tommy 的 `joyx/joyy` 全局变量写法。
 
 ## 输入协议链路
 
@@ -58,7 +58,7 @@ Tommy 的 `SetKickMode()` 会开启 `trace_mode`、设置 `kick_mode`、记录 `
 
 - `target.linear_vel`
 - `target.yaw_rate`
-- `command_t`
+- `balance_core::command`
 
 这符合当前项目“动作层表达意图，`balance_core` 负责底层控制”的接口框架。
 

@@ -149,12 +149,12 @@ controller::balance_request controller::actions::recover_command(action_state &s
  *
  * @return 姿态序列执行完成时返回 true
  */
-bool controller::actions::run_pose_sequence(action_state &state, const pose_step_t *steps, uint8_t count, uint32_t tick_ms)
+bool controller::actions::run_pose_sequence(action_state &state, const pose_step *steps, uint8_t count, uint32_t tick_ms)
 {
     if(steps == nullptr || count == 0){return true;}
     if(state.phase >= count){return true;}
 
-    const pose_step_t &step = steps[state.phase];
+    const pose_step &step = steps[state.phase];
     if(state.timer == 0)
     {
         set_pose(step.left, step.right, step.speed, step.accel);

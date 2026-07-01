@@ -3,7 +3,8 @@
 static TwoWire wire_0 = TwoWire(0);
 static TwoWire wire_1 = TwoWire(1);
 
-class i2c_dev {
+class i2c_dev
+{
     public:
         i2c_dev(uint8_t i2c_num, uint8_t scl_pin, uint8_t sda_pin, uint32_t freq)
             : i2c_num(i2c_num),
@@ -47,7 +48,10 @@ class i2c_dev {
             wire->endTransmission(true);
         }
 
-        TwoWire *get_TwoWire_handle(){return wire;}
+        TwoWire *get_TwoWire_handle()
+        {
+            return wire;
+        }
 
     private:
         uint8_t i2c_num;
@@ -86,7 +90,9 @@ static i2c_dev *get_dev(uint8_t bus_id)
  * @param bus_id i2c 总线编号
  */
 i2c_bus::i2c_bus(uint8_t bus_id)
-    : bus_id(bus_id){}
+    : bus_id(bus_id)
+{
+}
 
 /**
  * @brief 初始化 i2c 总线

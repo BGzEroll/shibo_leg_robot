@@ -6,14 +6,6 @@
 #include "actions/action_sit.h"
 #include "xbox.h"
 
-namespace action = controller::actions;
-
-using controller::action_io;
-using controller::action_state;
-using controller::balance_request;
-using controller::jump_command;
-using controller::mode_id;
-
 /**
  * @brief 切换动作模式并初始化该模式的运行状态
  *
@@ -21,22 +13,22 @@ using controller::mode_id;
  * @param mode 目标动作模式
  * @param jump 跳跃动作类型
  */
-void controller::actions::begin_mode(action_state &state, mode_id mode, jump_command jump)
+void controller::actions::begin_mode(controller::action_state &state, controller::mode_id mode, controller::jump_command jump)
 {
     state.mode = mode;
-    state.phase = action::PREPARE;
+    state.phase = controller::actions::PREPARE;
     state.timer = 0;
     state.ready_timer = 0;
     state.elapsed = 0;
-    state.jump = jump_runtime{};
-    state.kick = kick_runtime{};
+    state.jump = controller::jump_runtime{};
+    state.kick = controller::kick_runtime{};
 
-    if(mode != mode_id::JUMP){return;}
+    if(mode != controller::mode_id::JUMP){return;}
 
-    if(jump == jump_command::FORWARD){state.jump.linear_dir = 1;}
-    if(jump == jump_command::BACKWARD){state.jump.linear_dir = -1;}
-    if(jump == jump_command::TURN_LEFT){state.jump.turn_dir = 1;}
-    if(jump == jump_command::TURN_RIGHT){state.jump.turn_dir = -1;}
+    if(jump == controller::jump_command::FORWARD){state.jump.linear_dir = 1;}
+    if(jump == controller::jump_command::BACKWARD){state.jump.linear_dir = -1;}
+    if(jump == controller::jump_command::TURN_LEFT){state.jump.turn_dir = 1;}
+    if(jump == controller::jump_command::TURN_RIGHT){state.jump.turn_dir = -1;}
 }
 
 /**
@@ -48,41 +40,41 @@ void controller::actions::begin_mode(action_state &state, mode_id mode, jump_com
  *
  * @return 生成的平衡请求
  */
-static balance_request update_boot(action_state &state, action_io &ctx, uint32_t tick_ms)
+static controller::balance_request update_boot(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    balance_request cmd;
+    controller::balance_request cmd;
     switch(state.phase)
     {
-        case action::PREPARE:
-            action::set_torque(0);
-            state.phase = action::WAIT_SIGNAL;
+        case controller::actions::PREPARE:
+            controller::actions::set_torque(0);
+            state.phase = controller::actions::WAIT_SIGNAL;
             break;
 
-        case action::WAIT_SIGNAL:
-            if(ctx.input.buttons & BTN_RB){state.phase = action::INIT;}
+        case controller::actions::WAIT_SIGNAL:
+            if(ctx.input.buttons & BTN_RB){state.phase = controller::actions::INIT;}
             break;
 
-        case action::INIT:
-            action::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
-            action::reset_leg(ctx.leg);
-            state.phase = action::INIT_PREPARE;
+        case controller::actions::INIT:
+            controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+            controller::actions::reset_leg(ctx.leg);
+            state.phase = controller::actions::INIT_PREPARE;
             break;
 
-        case action::INIT_PREPARE:
+        case controller::actions::INIT_PREPARE:
             if((state.timer += tick_ms) >= 350)
             {
                 state.timer = 0;
                 state.elapsed = 0;
                 state.ready_timer = 0;
-                state.phase = action::INIT_RECOVER;
+                state.phase = controller::actions::INIT_RECOVER;
             }
             break;
 
-        case action::INIT_RECOVER:
-            cmd = action::recover_command(state, ctx);
-            if(action::recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
+        case controller::actions::INIT_RECOVER:
+            cmd = controller::actions::recover_command(state, ctx);
+            if(controller::actions::recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                action::begin_mode(state, mode_id::BALANCE);
+                controller::actions::begin_mode(state, controller::mode_id::BALANCE);
             }
             break;
     }
@@ -97,51 +89,51 @@ static balance_request update_boot(action_state &state, action_io &ctx, uint32_t
  *
  * @return 生成的平衡请求
  */
-static balance_request update_balance(action_state &state, action_io &ctx)
+static controller::balance_request update_balance(controller::action_state &state, controller::action_io &ctx)
 {
-    balance_request cmd;
+    controller::balance_request cmd;
     cmd.command.enable_balance = true;
     cmd.command.enable_motor = true;
     cmd.command.enable_steering = true;
     cmd.target.linear_vel = ctx.input.linear_cmd;
     cmd.target.yaw_rate = ctx.input.yaw_cmd;
-    action::run_leg_control(ctx);
+    controller::actions::run_leg_control(ctx);
 
     if((ctx.input.pressed_buttons & BTN_LS) &&
        fabsf(ctx.input.linear_cmd) < ctx.max_linear_vel * 0.05f)
     {
-        action::reset_leg(ctx.leg);
+        controller::actions::reset_leg(ctx.leg);
     }
 
     if(ctx.input.middle_calibration_request)
     {
-        action::begin_mode(state, mode_id::MIDDLE_CALIBRATION);
+        controller::actions::begin_mode(state, controller::mode_id::MIDDLE_CALIBRATION);
         return cmd;
     }
 
     bool modifier = (ctx.input.buttons & BTN_SELECT) != 0;
     if(modifier && (ctx.input.pressed_buttons & BTN_X))
     {
-        action::begin_mode(state, mode_id::KICK_PLACE);
+        controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
         return cmd;
     }
     if(modifier && (ctx.input.pressed_buttons & BTN_Y))
     {
-        action::begin_mode(state, mode_id::KICK_RUN);
+        controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
         return cmd;
     }
     if(modifier && (ctx.input.pressed_buttons & BTN_B))
     {
-        action::begin_mode(state, mode_id::BALANCE);
+        controller::actions::begin_mode(state, controller::mode_id::BALANCE);
         return cmd;
     }
 
-    if(ctx.input.pressed_buttons & BTN_LB){action::begin_mode(state, mode_id::SIT);}
-    if(ctx.input.pressed_buttons & BTN_RS){action::begin_mode(state, mode_id::JUMP, jump_command::IN_PLACE);}
-    if(ctx.input.pressed_buttons & BTN_Y){action::begin_mode(state, mode_id::JUMP, jump_command::FORWARD);}
-    if(ctx.input.pressed_buttons & BTN_A){action::begin_mode(state, mode_id::JUMP, jump_command::BACKWARD);}
-    if(ctx.input.pressed_buttons & BTN_X){action::begin_mode(state, mode_id::JUMP, jump_command::TURN_LEFT);}
-    if(ctx.input.pressed_buttons & BTN_B){action::begin_mode(state, mode_id::JUMP, jump_command::TURN_RIGHT);}
+    if(ctx.input.pressed_buttons & BTN_LB){controller::actions::begin_mode(state, controller::mode_id::SIT);}
+    if(ctx.input.pressed_buttons & BTN_RS){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::IN_PLACE);}
+    if(ctx.input.pressed_buttons & BTN_Y){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::FORWARD);}
+    if(ctx.input.pressed_buttons & BTN_A){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::BACKWARD);}
+    if(ctx.input.pressed_buttons & BTN_X){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::TURN_LEFT);}
+    if(ctx.input.pressed_buttons & BTN_B){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::TURN_RIGHT);}
     return cmd;
 }
 
@@ -150,9 +142,9 @@ static balance_request update_balance(action_state &state, action_io &ctx)
  *
  * @param state 动作状态机状态
  */
-void controller::actions_init(action_state &state)
+void controller::actions_init(controller::action_state &state)
 {
-    action::begin_mode(state, mode_id::BOOT);
+    controller::actions::begin_mode(state, controller::mode_id::BOOT);
 }
 
 /**
@@ -162,7 +154,7 @@ void controller::actions_init(action_state &state)
  *
  * @return 当前动作模式
  */
-controller::mode_id controller::actions_mode(const action_state &state)
+controller::mode_id controller::actions_mode(const controller::action_state &state)
 {
     return state.mode;
 }
@@ -176,45 +168,45 @@ controller::mode_id controller::actions_mode(const action_state &state)
  *
  * @return 生成的平衡请求
  */
-controller::balance_request controller::actions_update(action_state &state, action_io &ctx, uint32_t tick_ms)
+controller::balance_request controller::actions_update(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    if(state.mode != mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
+    if(state.mode != controller::mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
     {
-        action::begin_mode(state, mode_id::STOP);
-        return balance_request{};
+        controller::actions::begin_mode(state, controller::mode_id::STOP);
+        return controller::balance_request{};
     }
 
     switch(state.mode)
     {
-        case mode_id::BOOT:
+        case controller::mode_id::BOOT:
             return update_boot(state, ctx, tick_ms);
 
-        case mode_id::BALANCE:
+        case controller::mode_id::BALANCE:
             return update_balance(state, ctx);
 
-        case mode_id::SIT:
-            return action::update_sit(state, ctx, tick_ms);
+        case controller::mode_id::SIT:
+            return controller::actions::update_sit(state, ctx, tick_ms);
 
-        case mode_id::JUMP:
-            return action::update_jump(state, ctx, tick_ms);
+        case controller::mode_id::JUMP:
+            return controller::actions::update_jump(state, ctx, tick_ms);
 
-        case mode_id::KICK_PLACE:
-            return action::update_kick_place(state, ctx, tick_ms);
+        case controller::mode_id::KICK_PLACE:
+            return controller::actions::update_kick_place(state, ctx, tick_ms);
 
-        case mode_id::KICK_RUN:
-            return action::update_kick_run(state, ctx, tick_ms);
+        case controller::mode_id::KICK_RUN:
+            return controller::actions::update_kick_run(state, ctx, tick_ms);
 
-        case mode_id::MIDDLE_CALIBRATION:
-            return action::update_middle_calibration(state, ctx, tick_ms);
+        case controller::mode_id::MIDDLE_CALIBRATION:
+            return controller::actions::update_middle_calibration(state, ctx, tick_ms);
 
-        case mode_id::STOP:
+        case controller::mode_id::STOP:
             if(ctx.input.buttons & BTN_RB)
             {
-                action::begin_mode(state, mode_id::BOOT);
+                controller::actions::begin_mode(state, controller::mode_id::BOOT);
             }
-            return balance_request{};
+            return controller::balance_request{};
 
         default:
-            return balance_request{};
+            return controller::balance_request{};
     }
 }

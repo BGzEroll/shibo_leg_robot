@@ -22,7 +22,7 @@ struct command_packet
 static uart_bus servo_uart(2);
 static command_packet packet[SERVO_NUM];      // [0] 为左舵机，[1] 为右舵机
 static command_packet last_state[SERVO_NUM];      // 记录上一次的舵机目标参数
-sts3032::status_t sts3032::status[2];
+sts3032::status_data sts3032::status[2];
 static uint8_t tx_buf[128], tx_len = 0;       // 发送缓冲区
 
 /**
@@ -183,7 +183,7 @@ static void sync_write_position(uint8_t id_num)
  *
  * @return 解析结果状态码
  */
-static int32_t parse_sync_read(uint8_t *ids, uint8_t n, sts3032::status_t *status)
+static int32_t parse_sync_read(uint8_t *ids, uint8_t n, sts3032::status_data *status)
 {
     uint8_t buf[64];
     uint32_t len = servo_uart.read_bytes(buf, sizeof(buf));

@@ -4,7 +4,8 @@ extern HardwareSerial Serial;
 extern HardwareSerial Serial1;
 extern HardwareSerial Serial2;
 
-class uart_dev {
+class uart_dev
+{
     public:
         uart_dev(uint8_t uart_num, uint32_t baudrate)
             : uart_num(uart_num),
@@ -47,7 +48,10 @@ class uart_dev {
             serial->flush();
         }
 
-        HardwareSerial *get_HardwareSerial_handle(){return serial;}
+        HardwareSerial *get_HardwareSerial_handle()
+        {
+            return serial;
+        }
 
     private:
         uint8_t uart_num;
@@ -85,7 +89,9 @@ static uart_dev *get_dev(uint8_t bus_id)
  * @param bus_id UART 总线编号
  */
 uart_bus::uart_bus(uint8_t bus_id)
-    : bus_id(bus_id){}
+    : bus_id(bus_id)
+{
+}
 
 /**
  * @brief 初始化 uart 总线

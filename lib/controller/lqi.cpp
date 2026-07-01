@@ -2,7 +2,7 @@
 
 namespace lqi
 {
-	void init();
+    void init();
 }
 
 static const float lqi_gain_poly[12][4] = {

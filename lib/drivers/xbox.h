@@ -33,19 +33,22 @@ class xbox
         void update();
         void set_key_vibration(uint8_t power, uint32_t duration);
         void set_trigger_vibration(uint8_t trigger, uint32_t duration);
-        bool get_connection_state(){return was_connected;}
+        bool get_connection_state()
+        {
+            return was_connected;
+        }
 
     public:
         uint16_t buttons;
         float axes[6];
 
     private:
-        using xboxCore = XboxSeriesXControllerESP32_asukiaaa::Core;
-        using xboxReporter = XboxSeriesXHIDReportBuilder_asukiaaa::ReportBase;
+        using xbox_core = XboxSeriesXControllerESP32_asukiaaa::Core;
+        using xbox_reporter = XboxSeriesXHIDReportBuilder_asukiaaa::ReportBase;
 
     private:
-        xboxCore core;
-        xboxReporter reporter;
+        xbox_core core;
+        xbox_reporter reporter;
 
     private:
         void process_notification();
@@ -55,14 +58,14 @@ class xbox
     private:
         bool was_connected;
 
-        enum class vibration_state_t
+        enum class vibration_state
         {
             off,
             start,
             trigger
         };
 
-        vibration_state_t vibration_state;
+        vibration_state vibration_state;
         uint32_t vibration_duration;
         uint32_t vibration_start_time;
 };

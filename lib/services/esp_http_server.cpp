@@ -59,36 +59,36 @@ static String console_html()
     if(!wifi_dev::config_portal_active())
     {
         extra_modules = R"HTML(
-				<a class="module" href="/servo/middle"><strong>舵机中位校准</strong><span>机械装配</span></a>
+                <a class="module" href="/servo/middle"><strong>舵机中位校准</strong><span>机械装配</span></a>
 )HTML";
     }
 
     return String(R"HTML(<!doctype html>
-		<html lang="zh-CN">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width,initial-scale=1">
-			<title>Console</title>
-			<style>
-				body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
-				main{max-width:760px;margin:0 auto;padding:22px 16px}
-				h1{font-size:26px;margin:0 0 18px}
-				.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
-				.module{display:block;background:white;border:1px solid #d5dce8;border-radius:6px;padding:16px;text-decoration:none;color:#111827}
-				.module strong{display:block;font-size:18px;margin-bottom:6px}
-				.module span{color:#64748b;font-size:14px}
-			</style>
-		</head>
-		<body>
-			<main>
-				<h1>Console</h1>
-				<section class="grid">
-					<a class="module" href="/wifi"><strong>WiFi 设置</strong><span>网络连接</span></a>
-					<a class="module" href="/bluetooth"><strong>蓝牙设置</strong><span>Xbox 手柄</span></a>
-)HTML") + extra_modules + R"HTML(				</section>
-			</main>
-		</body>
-		</html>)HTML";
+        <html lang="zh-CN">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Console</title>
+            <style>
+                body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
+                main{max-width:760px;margin:0 auto;padding:22px 16px}
+                h1{font-size:26px;margin:0 0 18px}
+                .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+                .module{display:block;background:white;border:1px solid #d5dce8;border-radius:6px;padding:16px;text-decoration:none;color:#111827}
+                .module strong{display:block;font-size:18px;margin-bottom:6px}
+                .module span{color:#64748b;font-size:14px}
+            </style>
+        </head>
+        <body>
+            <main>
+                <h1>Console</h1>
+                <section class="grid">
+                    <a class="module" href="/wifi"><strong>WiFi 设置</strong><span>网络连接</span></a>
+                    <a class="module" href="/bluetooth"><strong>蓝牙设置</strong><span>Xbox 手柄</span></a>
+)HTML") + extra_modules + R"HTML(                </section>
+            </main>
+        </body>
+        </html>)HTML";
 }
 
 /**
@@ -99,67 +99,67 @@ static String console_html()
 static String wifi_html()
 {
     return R"HTML(<!doctype html>
-		<html lang="zh-CN">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width,initial-scale=1">
-			<title>Shibo WiFi</title>
-			<style>
-				body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f5f7fb;color:#172033}
-				main{max-width:520px;margin:0 auto;padding:24px 18px}
-				h1{font-size:24px;margin:0 0 18px}
-				nav{margin-bottom:14px}
-				button,input{font:inherit}
-				button{border:0;background:#1d4ed8;color:white;padding:10px 14px;border-radius:6px}
-				button:disabled{opacity:.55}
-				.network{display:flex;justify-content:space-between;align-items:center;border:1px solid #d8deea;background:white;border-radius:6px;padding:10px 12px;margin:8px 0}
-				.network button{background:#334155;padding:7px 10px}
-				form{display:grid;gap:10px;margin-top:18px;background:white;border:1px solid #d8deea;border-radius:6px;padding:14px}
-				input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px}
-				#status{margin-top:12px;min-height:24px;color:#475569}
-				small{color:#64748b}
-				a{color:#1d4ed8}
-			</style>
-		</head>
-		<body>
-			<main>
-				<nav><a href="/">Console</a></nav>
-				<h1>Shibo WiFi</h1>
-				<button id="scan">扫描周围 WiFi</button>
-				<div id="list"></div>
-				<form id="form">
-					<input id="ssid" name="ssid" placeholder="SSID" required>
-					<input id="password" name="password" placeholder="密码" type="password">
-					<button id="connect" type="submit">连接并保存</button>
-				</form>
-				<div id="status"></div>
-				<small>连接成功后设备会切回 Station 模式，配置热点将关闭。</small>
-			</main>
-			<script>
-				const scanBtn=document.getElementById('scan');
-				const list=document.getElementById('list');
-				const statusEl=document.getElementById('status');
-				scanBtn.onclick=async()=>{
-					scanBtn.disabled=true; statusEl.textContent='正在扫描...'; list.innerHTML='';
-					try{
-						const res=await fetch('/api/wifi/scan');
-						const aps=await res.json();
-						list.innerHTML=aps.map(ap=>`<div class="network"><span>${ap.ssid}<br><small>${ap.rssi} dBm ${ap.secure?'加密':'开放'}</small></span><button data-ssid="${ap.ssid.replace(/"/g,'&quot;')}">选择</button></div>`).join('') || '<p>未发现 WiFi</p>';
-						list.querySelectorAll('button').forEach(btn=>btn.onclick=()=>document.getElementById('ssid').value=btn.dataset.ssid);
-						statusEl.textContent='扫描完成';
-					}catch(e){statusEl.textContent='扫描失败';}
-					scanBtn.disabled=false;
-				};
-				document.getElementById('form').onsubmit=async(e)=>{
-					e.preventDefault(); statusEl.textContent='正在连接...';
-					const body=new URLSearchParams(new FormData(e.target));
-					const res=await fetch('/api/wifi/connect',{method:'POST',body});
-					const data=await res.json();
-					statusEl.textContent=data.ok ? `连接成功，IP: ${data.ip}` : `连接失败: ${data.error||'请检查密码'}`;
-				};
-			</script>
-		</body>
-		</html>)HTML";
+        <html lang="zh-CN">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Shibo WiFi</title>
+            <style>
+                body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f5f7fb;color:#172033}
+                main{max-width:520px;margin:0 auto;padding:24px 18px}
+                h1{font-size:24px;margin:0 0 18px}
+                nav{margin-bottom:14px}
+                button,input{font:inherit}
+                button{border:0;background:#1d4ed8;color:white;padding:10px 14px;border-radius:6px}
+                button:disabled{opacity:.55}
+                .network{display:flex;justify-content:space-between;align-items:center;border:1px solid #d8deea;background:white;border-radius:6px;padding:10px 12px;margin:8px 0}
+                .network button{background:#334155;padding:7px 10px}
+                form{display:grid;gap:10px;margin-top:18px;background:white;border:1px solid #d8deea;border-radius:6px;padding:14px}
+                input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px}
+                #status{margin-top:12px;min-height:24px;color:#475569}
+                small{color:#64748b}
+                a{color:#1d4ed8}
+            </style>
+        </head>
+        <body>
+            <main>
+                <nav><a href="/">Console</a></nav>
+                <h1>Shibo WiFi</h1>
+                <button id="scan">扫描周围 WiFi</button>
+                <div id="list"></div>
+                <form id="form">
+                    <input id="ssid" name="ssid" placeholder="SSID" required>
+                    <input id="password" name="password" placeholder="密码" type="password">
+                    <button id="connect" type="submit">连接并保存</button>
+                </form>
+                <div id="status"></div>
+                <small>连接成功后设备会切回 Station 模式，配置热点将关闭。</small>
+            </main>
+            <script>
+                const scanBtn=document.getElementById('scan');
+                const list=document.getElementById('list');
+                const statusEl=document.getElementById('status');
+                scanBtn.onclick=async()=>{
+                    scanBtn.disabled=true; statusEl.textContent='正在扫描...'; list.innerHTML='';
+                    try{
+                        const res=await fetch('/api/wifi/scan');
+                        const aps=await res.json();
+                        list.innerHTML=aps.map(ap=>`<div class="network"><span>${ap.ssid}<br><small>${ap.rssi} dBm ${ap.secure?'加密':'开放'}</small></span><button data-ssid="${ap.ssid.replace(/"/g,'&quot;')}">选择</button></div>`).join('') || '<p>未发现 WiFi</p>';
+                        list.querySelectorAll('button').forEach(btn=>btn.onclick=()=>document.getElementById('ssid').value=btn.dataset.ssid);
+                        statusEl.textContent='扫描完成';
+                    }catch(e){statusEl.textContent='扫描失败';}
+                    scanBtn.disabled=false;
+                };
+                document.getElementById('form').onsubmit=async(e)=>{
+                    e.preventDefault(); statusEl.textContent='正在连接...';
+                    const body=new URLSearchParams(new FormData(e.target));
+                    const res=await fetch('/api/wifi/connect',{method:'POST',body});
+                    const data=await res.json();
+                    statusEl.textContent=data.ok ? `连接成功，IP: ${data.ip}` : `连接失败: ${data.error||'请检查密码'}`;
+                };
+            </script>
+        </body>
+        </html>)HTML";
 }
 
 /**
@@ -170,75 +170,75 @@ static String wifi_html()
 static String bluetooth_html()
 {
     return R"HTML(<!doctype html>
-		<html lang="zh-CN">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width,initial-scale=1">
-			<title>Shibo Bluetooth</title>
-			<style>
-				body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
-				main{max-width:760px;margin:0 auto;padding:22px 16px}
-				header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
-				h1{font-size:24px;margin:0}
-				button{font:inherit;border:0;background:#2563eb;color:white;padding:9px 13px;border-radius:6px}
-				button:disabled{opacity:.55}
-				a{color:#2563eb;text-decoration:none}
-				.panel{background:white;border:1px solid #d5dce8;border-radius:6px;padding:14px;margin:12px 0}
-				.row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #edf0f5;padding:8px 0}
-				.row:last-child{border-bottom:0}
-				.device{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid #d5dce8;background:white;border-radius:6px;padding:10px 12px;margin:8px 0}
-				.name{font-weight:600}
-				.meta{color:#64748b;font-size:13px;margin-top:3px}
-				.tag{display:inline-block;color:#166534;background:#dcfce7;border-radius:4px;padding:1px 5px;margin-left:6px;font-size:12px}
-				#status{min-height:24px;color:#475569}
-			</style>
-		</head>
-		<body>
-			<main>
-				<header><h1>蓝牙设置</h1><a href="/">Console</a></header>
-				<section class="panel">
-					<div class="row"><span>手柄连接</span><strong id="connected">--</strong></div>
-					<div class="row"><span>目标地址</span><strong id="target">--</strong></div>
-				</section>
-				<button id="scan">扫描蓝牙设备</button>
-				<div id="status"></div>
-				<div id="devices"></div>
-			</main>
-			<script>
-				const scanBtn=document.getElementById('scan');
-				const statusEl=document.getElementById('status');
-				const devicesEl=document.getElementById('devices');
-				async function refreshStatus(){
-					try{
-						const data=await (await fetch('/api/xbox/status')).json();
-						document.getElementById('connected').textContent=data.connected?'已连接':'未连接';
-						document.getElementById('target').textContent=data.target||'自动发现';
-					}catch(e){}
-				}
-				function item(dev){
-					const name=dev.name||'未命名设备';
-					const tag=dev.xbox?'<span class="tag">Xbox</span>':'';
-					return `<div class="device"><div><div class="name">${name}${tag}</div><div class="meta">${dev.address} · ${dev.rssi} dBm · ${dev.connectable?'可连接':'广播'}</div></div><button data-address="${dev.address}">选择</button></div>`;
-				}
-				scanBtn.onclick=async()=>{
-					scanBtn.disabled=true; devicesEl.innerHTML=''; statusEl.textContent='正在扫描 BLE，约 4 秒...';
-					try{
-						const data=await (await fetch('/api/ble/scan')).json();
-						devicesEl.innerHTML=data.devices.map(item).join('') || '<p>未发现蓝牙设备</p>';
-						devicesEl.querySelectorAll('button').forEach(btn=>btn.onclick=async()=>{
-							statusEl.textContent='正在保存目标手柄...';
-							const body=new URLSearchParams({address:btn.dataset.address});
-							const result=await (await fetch('/api/xbox/select',{method:'POST',body})).json();
-							statusEl.textContent=result.ok?'已保存，正在用新地址重新连接手柄':(result.error||'保存失败');
-						});
-						statusEl.textContent='扫描完成';
-					}catch(e){statusEl.textContent='扫描失败';}
-					scanBtn.disabled=false;
-				};
-				refreshStatus(); setInterval(refreshStatus,2000);
-			</script>
-		</body>
-		</html>)HTML";
+        <html lang="zh-CN">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Shibo Bluetooth</title>
+            <style>
+                body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
+                main{max-width:760px;margin:0 auto;padding:22px 16px}
+                header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+                h1{font-size:24px;margin:0}
+                button{font:inherit;border:0;background:#2563eb;color:white;padding:9px 13px;border-radius:6px}
+                button:disabled{opacity:.55}
+                a{color:#2563eb;text-decoration:none}
+                .panel{background:white;border:1px solid #d5dce8;border-radius:6px;padding:14px;margin:12px 0}
+                .row{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #edf0f5;padding:8px 0}
+                .row:last-child{border-bottom:0}
+                .device{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid #d5dce8;background:white;border-radius:6px;padding:10px 12px;margin:8px 0}
+                .name{font-weight:600}
+                .meta{color:#64748b;font-size:13px;margin-top:3px}
+                .tag{display:inline-block;color:#166534;background:#dcfce7;border-radius:4px;padding:1px 5px;margin-left:6px;font-size:12px}
+                #status{min-height:24px;color:#475569}
+            </style>
+        </head>
+        <body>
+            <main>
+                <header><h1>蓝牙设置</h1><a href="/">Console</a></header>
+                <section class="panel">
+                    <div class="row"><span>手柄连接</span><strong id="connected">--</strong></div>
+                    <div class="row"><span>目标地址</span><strong id="target">--</strong></div>
+                </section>
+                <button id="scan">扫描蓝牙设备</button>
+                <div id="status"></div>
+                <div id="devices"></div>
+            </main>
+            <script>
+                const scanBtn=document.getElementById('scan');
+                const statusEl=document.getElementById('status');
+                const devicesEl=document.getElementById('devices');
+                async function refreshStatus(){
+                    try{
+                        const data=await (await fetch('/api/xbox/status')).json();
+                        document.getElementById('connected').textContent=data.connected?'已连接':'未连接';
+                        document.getElementById('target').textContent=data.target||'自动发现';
+                    }catch(e){}
+                }
+                function item(dev){
+                    const name=dev.name||'未命名设备';
+                    const tag=dev.xbox?'<span class="tag">Xbox</span>':'';
+                    return `<div class="device"><div><div class="name">${name}${tag}</div><div class="meta">${dev.address} · ${dev.rssi} dBm · ${dev.connectable?'可连接':'广播'}</div></div><button data-address="${dev.address}">选择</button></div>`;
+                }
+                scanBtn.onclick=async()=>{
+                    scanBtn.disabled=true; devicesEl.innerHTML=''; statusEl.textContent='正在扫描 BLE，约 4 秒...';
+                    try{
+                        const data=await (await fetch('/api/ble/scan')).json();
+                        devicesEl.innerHTML=data.devices.map(item).join('') || '<p>未发现蓝牙设备</p>';
+                        devicesEl.querySelectorAll('button').forEach(btn=>btn.onclick=async()=>{
+                            statusEl.textContent='正在保存目标手柄...';
+                            const body=new URLSearchParams({address:btn.dataset.address});
+                            const result=await (await fetch('/api/xbox/select',{method:'POST',body})).json();
+                            statusEl.textContent=result.ok?'已保存，正在用新地址重新连接手柄':(result.error||'保存失败');
+                        });
+                        statusEl.textContent='扫描完成';
+                    }catch(e){statusEl.textContent='扫描失败';}
+                    scanBtn.disabled=false;
+                };
+                refreshStatus(); setInterval(refreshStatus,2000);
+            </script>
+        </body>
+        </html>)HTML";
 }
 
 /**
@@ -249,61 +249,61 @@ static String bluetooth_html()
 static String servo_calibration_html()
 {
     return R"HTML(<!doctype html>
-		<html lang="zh-CN">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width,initial-scale=1">
-			<title>Servo Calibration</title>
-			<style>
-				body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
-				main{max-width:560px;margin:0 auto;padding:22px 16px}
-				header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
-				h1{font-size:24px;margin:0}
-				button{font:inherit;border:0;background:#2563eb;color:white;padding:10px 14px;border-radius:6px}
-				button:disabled{opacity:.55}
-				a{color:#2563eb;text-decoration:none}
-				.panel{background:white;border:1px solid #d5dce8;border-radius:6px;padding:14px;margin:12px 0}
-				#status{min-height:24px;color:#475569}
-			</style>
-		</head>
-		<body>
-			<main>
-				<header><h1>舵机中位校准</h1><a href="/">Console</a></header>
-				<section class="panel">
-					<button id="run">执行</button>
-					<div id="status"></div>
-				</section>
-			</main>
-			<script>
-				const runBtn=document.getElementById('run');
-				const statusEl=document.getElementById('status');
-				const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
-				async function waitCalibration(){
-					const start=Date.now();
-					while(Date.now()-start<10000){
-						await sleep(500);
-						const data=await (await fetch('/api/servo/middle-calibration/status')).json();
-						if(data.ok&&data.success){return true;}
-					}
-					return false;
-				}
-				runBtn.onclick=async()=>{
-					runBtn.disabled=true; statusEl.textContent='正在执行...';
-					try{
-						const data=await (await fetch('/api/servo/middle-calibration',{method:'POST'})).json();
-						if(!data.ok){
-							statusEl.textContent=data.error||'执行失败';
-							runBtn.disabled=false;
-							return;
-						}
-						statusEl.textContent='已提交中位校准流程，等待完成...';
-						statusEl.textContent=await waitCalibration()?'校准成功':'校准失败：10 秒内未收到成功回报';
-					}catch(e){statusEl.textContent='执行失败';}
-					runBtn.disabled=false;
-				};
-			</script>
-		</body>
-		</html>)HTML";
+        <html lang="zh-CN">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Servo Calibration</title>
+            <style>
+                body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#eef2f7;color:#111827}
+                main{max-width:560px;margin:0 auto;padding:22px 16px}
+                header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+                h1{font-size:24px;margin:0}
+                button{font:inherit;border:0;background:#2563eb;color:white;padding:10px 14px;border-radius:6px}
+                button:disabled{opacity:.55}
+                a{color:#2563eb;text-decoration:none}
+                .panel{background:white;border:1px solid #d5dce8;border-radius:6px;padding:14px;margin:12px 0}
+                #status{min-height:24px;color:#475569}
+            </style>
+        </head>
+        <body>
+            <main>
+                <header><h1>舵机中位校准</h1><a href="/">Console</a></header>
+                <section class="panel">
+                    <button id="run">执行</button>
+                    <div id="status"></div>
+                </section>
+            </main>
+            <script>
+                const runBtn=document.getElementById('run');
+                const statusEl=document.getElementById('status');
+                const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+                async function waitCalibration(){
+                    const start=Date.now();
+                    while(Date.now()-start<10000){
+                        await sleep(500);
+                        const data=await (await fetch('/api/servo/middle-calibration/status')).json();
+                        if(data.ok&&data.success){return true;}
+                    }
+                    return false;
+                }
+                runBtn.onclick=async()=>{
+                    runBtn.disabled=true; statusEl.textContent='正在执行...';
+                    try{
+                        const data=await (await fetch('/api/servo/middle-calibration',{method:'POST'})).json();
+                        if(!data.ok){
+                            statusEl.textContent=data.error||'执行失败';
+                            runBtn.disabled=false;
+                            return;
+                        }
+                        statusEl.textContent='已提交中位校准流程，等待完成...';
+                        statusEl.textContent=await waitCalibration()?'校准成功':'校准失败：10 秒内未收到成功回报';
+                    }catch(e){statusEl.textContent='执行失败';}
+                    runBtn.disabled=false;
+                };
+            </script>
+        </body>
+        </html>)HTML";
 }
 
 /**
