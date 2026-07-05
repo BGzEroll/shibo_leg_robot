@@ -1,13 +1,14 @@
 #include "start.h"
 
-#include <Arduino.h>
-#include "freertos/task.h"
 #include "balance_core.h"
+#include "ble_app.h"
 #include "controller.h"
+#include "esp_http_server.h"
 #include "host_comm.h"
 #include "led_dev.h"
 #include "xbox_dev.h"
-#include "esp_http_server.h"
+#include <Arduino.h>
+#include "freertos/task.h"
 
 /**
  * @brief 创建系统中的 RTOS 任务
@@ -19,7 +20,8 @@ static void task_list()
     xTaskCreatePinnedToCore(balance_core::core_task_entry, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(balance_core::control_task_entry, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
     xTaskCreatePinnedToCore(host_comm::task_entry, "host_comm_task", 4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(esp_http_server::task_entry, "http_server_task", 4096, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(ble_app::task_entry, "ble_app_task", 4096, nullptr, 2, nullptr, 0);
+    // xTaskCreatePinnedToCore(esp_http_server::task_entry, "http_server_task", 4096, nullptr, 2, nullptr, 0);
 }
 
 /**
@@ -31,7 +33,8 @@ void start_init_all()
 
     led_dev::init();
     xbox_dev::init();
-    esp_http_server::init();
+    ble_app::init();
+    // esp_http_server::init();
     controller::init();
 
     task_list();
