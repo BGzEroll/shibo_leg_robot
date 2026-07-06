@@ -85,6 +85,7 @@ namespace controller
         uint32_t last_dy_time = 0;
         uint32_t last_vision_seq = 0;
         uint32_t kick_timer = 0;
+        uint32_t kick_cooldown_timer = 0;
         uint32_t post_timer = 0;
         bool chased = false;
         bool aligned = false;

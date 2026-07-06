@@ -11,24 +11,25 @@ static constexpr float CAM_PD_P = 0.07f;
 static constexpr float CAM_PD_D = 0.05f;
 static constexpr float CAM_PD_STEP_LIMIT = 10.0f;
 static constexpr int32_t CAM_AIM_DEADBAND = 10;
-static constexpr float YAW_AIM_P = 0.5f;
+static constexpr float YAW_AIM_P = 0.7f;
 static constexpr float YAW_ALIGN_KP = 1.2f;
 static constexpr float YAW_RATE_LIMIT = 0.9f;
 static constexpr float YAW_ALIGN_LIMIT = 10.0f * PI / 180.0f;
-static constexpr int32_t YAW_AIM_DEADBAND = 50;
+static constexpr int32_t YAW_AIM_DEADBAND = 40;
 static constexpr float JOY_RATE_LIMIT = 100.0f;
 static constexpr float CHASE_LINEAR_KP = 0.002f;
 static constexpr float RUN_FORWARD_MAX = 0.25f;
 static constexpr float RUN_BACK_VEL = -0.12f;
-static constexpr int16_t PLACE_BALL_S2 = 40;
+static constexpr int16_t PLACE_BALL_S2 = 20;
 static constexpr int16_t PLACE_KICK_DY = -10;
-static constexpr int16_t CHASE_BALL_S2 = 30;
+static constexpr int16_t CHASE_BALL_S2 = 10;
 static constexpr int16_t RUN_KICK_DY = -5;
 static constexpr int16_t KICK_DY_MAX = 120;
 static constexpr int16_t OB_BALL_DY = 120;
 static constexpr uint16_t FRONTIER_READY_ANGLE = 100;
 static constexpr uint16_t FRONTIER_KICK_ANGLE = 0;
 static constexpr uint32_t KICK_HOLD_MS = 0;
+static constexpr uint32_t KICK_COOLDOWN_MS = 2000;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
 
 /**
@@ -193,6 +194,19 @@ static void trigger_kick(controller::action_state &state)
     set_frontier(state, FRONTIER_KICK_ANGLE);
     state.kick.kicking = true;
     state.kick.kick_timer = 0;
+    state.kick.kick_cooldown_timer = KICK_COOLDOWN_MS;
+}
+
+/**
+ * @brief 判断当前是否允许再次触发踢球
+ *
+ * @param state 动作状态机状态
+ *
+ * @return 冷却结束且不在踢球保持阶段时返回 true
+ */
+static bool can_trigger_kick(const controller::action_state &state)
+{
+    return !state.kick.kicking && state.kick.kick_cooldown_timer == 0;
 }
 
 /**
@@ -211,6 +225,25 @@ static void update_kick_hold(controller::action_state &state, uint32_t tick_ms)
         state.kick.kicking = false;
         state.kick.kick_timer = 0;
     }
+}
+
+/**
+ * @brief 推进踢球触发冷却计时
+ *
+ * @param state 动作状态机状态
+ * @param tick_ms 本次更新周期，单位毫秒
+ */
+static void update_kick_cooldown(controller::action_state &state, uint32_t tick_ms)
+{
+    if(!state.kick.kick_cooldown_timer){return;}
+
+    if(state.kick.kick_cooldown_timer <= tick_ms)
+    {
+        state.kick.kick_cooldown_timer = 0;
+        return;
+    }
+
+    state.kick.kick_cooldown_timer -= tick_ms;
 }
 
 /**
@@ -260,6 +293,7 @@ controller::balance_request controller::actions::update_kick_place(controller::a
 
     if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     update_kick_hold(state, tick_ms);
+    update_kick_cooldown(state, tick_ms);
 
     host_comm::vision_measurement vision;
     if(!read_vision(vision))
@@ -274,7 +308,7 @@ controller::balance_request controller::actions::update_kick_place(controller::a
 
     if(state.kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
     {
-        if(!state.kick.kicking){trigger_kick(state);}
+        if(can_trigger_kick(state)){trigger_kick(state);}
     }
     else
     {
@@ -302,6 +336,7 @@ controller::balance_request controller::actions::update_kick_run(controller::act
     }
 
     if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
+    update_kick_cooldown(state, tick_ms);
     if(state.kick.post_kick)
     {
         if(state.kick.kicking)
@@ -350,8 +385,11 @@ controller::balance_request controller::actions::update_kick_run(controller::act
 
     if(state.kick.chased)
     {
-        trigger_kick(state);
-        state.kick.post_kick = true;
+        if(can_trigger_kick(state))
+        {
+            trigger_kick(state);
+            state.kick.post_kick = true;
+        }
         return cmd;
     }
 
