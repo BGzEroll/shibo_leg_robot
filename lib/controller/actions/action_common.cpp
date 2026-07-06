@@ -3,6 +3,9 @@
 #include "sts3032.h"
 #include "xbox.h"
 
+static constexpr float LEG_HEIGHT_BASE_MIN = -10.0f;
+static constexpr float LEG_HEIGHT_BASE_MAX = 52.0f;
+
 /**
  * @brief 将角度归一化到 -PI 到 PI 范围内
  *
@@ -79,14 +82,15 @@ void controller::actions::run_leg_control(action_io &ctx)
     if((ctx.input.buttons & BTN_LEFT) && !(ctx.input.buttons & ~BTN_LEFT)){ctx.leg.roll_adjust -= 0.025f;}
     if((ctx.input.buttons & BTN_UP) && !(ctx.input.buttons & ~BTN_UP)){ctx.leg.height_base -= 0.025f;}
     if((ctx.input.buttons & BTN_DOWN) && !(ctx.input.buttons & ~BTN_DOWN)){ctx.leg.height_base += 0.025f;}
+    ctx.leg.height_base = constrain(ctx.leg.height_base, LEG_HEIGHT_BASE_MIN, LEG_HEIGHT_BASE_MAX);
 
     float roll_angle = ctx.leg.roll_lpf(ctx.status.roll_angle / (float)PI * 180.0f);
     float leg_add = ctx.leg.roll_pid(roll_angle - ctx.leg.roll_adjust);
     int16_t left = (int16_t)(2048.0f + 8.4f * (30.0f - ctx.leg.height_base) - leg_add);
     int16_t right = (int16_t)(2048.0f - 8.4f * (30.0f - ctx.leg.height_base) - leg_add);
 
-    left = constrain(left, SERVO_LEFT_MIN, SERVO_LEFT_MAX);
-    right = constrain(right, SERVO_RIGHT_MAX, SERVO_RIGHT_MIN);
+    left = constrain(left, SERVO_LEFT_MIN, SERVO_LEFT_MAX - 100);
+    right = constrain(right, SERVO_RIGHT_MAX + 100, SERVO_RIGHT_MIN);
     set_pose(left, right, 1000, 0);
 }
 
