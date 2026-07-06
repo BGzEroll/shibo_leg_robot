@@ -19,6 +19,7 @@ namespace host_comm
         int16_t dx = 0;
         int16_t dy = 0;
         uint32_t timestamp_ms = 0;
+        uint32_t seq = 0;
         bool valid = false;
     };
 

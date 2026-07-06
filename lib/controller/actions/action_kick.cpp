@@ -88,6 +88,22 @@ static bool read_vision(host_comm::vision_measurement &out)
 }
 
 /**
+ * @brief 判断视觉测量是否是尚未用于相机步进的新帧
+ *
+ * @param state 动作状态机状态
+ * @param vision 视觉测量
+ *
+ * @return 新视觉帧时返回 true
+ */
+static bool consume_vision_step(controller::action_state &state, const host_comm::vision_measurement &vision)
+{
+    if(state.kick.last_vision_seq == vision.seq){return false;}
+
+    state.kick.last_vision_seq = vision.seq;
+    return true;
+}
+
+/**
  * @brief 根据 dy 按 Tommy 的 PD 步进调整摄像头俯仰角
  *
  * @param state 动作状态机状态
@@ -253,7 +269,7 @@ controller::balance_request controller::actions::update_kick_place(controller::a
         return cmd;
     }
 
-    aim_camera(state, vision.dy);
+    if(consume_vision_step(state, vision)){aim_camera(state, vision.dy);}
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
     state.kick.yaw_rate = cmd.target.yaw_rate;
 
@@ -329,7 +345,7 @@ controller::balance_request controller::actions::update_kick_run(controller::act
         return cmd;
     }
 
-    aim_camera(state, vision.dy);
+    if(consume_vision_step(state, vision)){aim_camera(state, vision.dy);}
     cmd.target.yaw_rate = aim_yaw_rate(vision.dx);
     state.kick.yaw_rate = cmd.target.yaw_rate;
 

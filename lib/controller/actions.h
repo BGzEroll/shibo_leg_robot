@@ -83,6 +83,7 @@ namespace controller
         int16_t last_dy = 0;
         uint16_t frontier_angle = 181;
         uint32_t last_dy_time = 0;
+        uint32_t last_vision_seq = 0;
         uint32_t kick_timer = 0;
         uint32_t post_timer = 0;
         bool chased = false;

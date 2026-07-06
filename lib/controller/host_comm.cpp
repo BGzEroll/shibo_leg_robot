@@ -21,6 +21,7 @@ static uint32_t send_timer = 0;
 static uart_bus host_uart(0);
 static portMUX_TYPE vision_lock = portMUX_INITIALIZER_UNLOCKED;
 static host_comm::vision_measurement vision_snapshot;
+static uint32_t vision_seq = 0;
 
 /**
  * @brief 获取上位机遥控输入队列
@@ -93,6 +94,7 @@ static void parse_vision(uint8_t *frame)
     data.dx = (int16_t)(p[0] | (p[1] << 8));
     data.dy = (int16_t)(p[2] | (p[3] << 8));
     data.timestamp_ms = millis();
+    data.seq = ++vision_seq;
     data.valid = data.dx != VISION_LOST_VALUE && data.dy != VISION_LOST_VALUE;
 
     portENTER_CRITICAL(&vision_lock);
