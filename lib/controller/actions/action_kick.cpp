@@ -149,7 +149,7 @@ static float aim_yaw_rate(int16_t dx)
 {
     if(abs((int32_t)dx) < YAW_AIM_DEADBAND){return 0.0f;}
 
-    float direction = (dx > 0) ? -1.0f : 1.0f;
+    float direction = (dx > 0) ? 1.0f : -1.0f;
     float joy_rate = constrain((float)abs((int32_t)dx) * YAW_AIM_P, 0.0f, JOY_RATE_LIMIT) * direction;
     return constrain(joy_rate * (YAW_RATE_LIMIT / JOY_RATE_LIMIT), -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
 }
