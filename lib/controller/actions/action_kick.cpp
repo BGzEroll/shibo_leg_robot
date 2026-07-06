@@ -5,7 +5,7 @@
 #include "ptk7350.h"
 #include "xbox.h"
 
-static constexpr float CAM_INITIAL_ANGLE = 90.0f;
+static constexpr float CAM_INITIAL_ANGLE = 60.0f;
 static constexpr float CAM_LOST_ANGLE = 60.0f;
 static constexpr float CAM_PD_P = 0.07f;
 static constexpr float CAM_PD_D = 0.05f;
@@ -237,7 +237,6 @@ static void prepare_kick(controller::action_state &state, controller::action_io 
     state.kick = controller::kick_runtime{};
     state.kick.target_yaw = ctx.status.yaw_angle;
     set_camera(state, CAM_INITIAL_ANGLE);
-    set_frontier(state, FRONTIER_READY_ANGLE);
     state.phase = controller::actions::MOVING;
 }
 
