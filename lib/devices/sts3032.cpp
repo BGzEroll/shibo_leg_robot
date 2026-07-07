@@ -186,7 +186,8 @@ static void sync_write_position(uint8_t id_num)
 static int32_t parse_sync_read(uint8_t *ids, uint8_t n, sts3032::status_data *status)
 {
     uint8_t buf[64];
-    uint32_t len = servo_uart.read_bytes(buf, sizeof(buf));
+    uint32_t len = 0;
+    if(servo_uart.read_bytes(buf, sizeof(buf), len) != uart_result::OK){return -1;}
 
     uint32_t offset = 0;
     for(uint8_t i = 0; i < n; i++)

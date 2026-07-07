@@ -183,7 +183,8 @@ static void parse_rx()
 static void update_rx()
 {
     uint8_t tmp[32];
-    uint32_t len = host_uart.read_bytes(tmp, sizeof(tmp));
+    uint32_t len = 0;
+    if(host_uart.read_bytes(tmp, sizeof(tmp), len) != uart_result::OK){return;}
     if(!len){return;}
     if(rx_len + len > sizeof(rx_buf)){rx_len = 0;}
 

@@ -20,32 +20,44 @@ class uart_dev
             }
         }
 
-        void init()
+        uart_result init()
         {
-            if(is_init || !serial){return;}
+            if(!serial){return uart_result::INVALID_BUS;}
+            if(is_init){return uart_result::OK;}
+
             is_init = true;
             serial->begin(baudrate);
+            return uart_result::OK;
         }
 
-        uint32_t read_bytes(uint8_t *buf, uint32_t max_len)
+        uart_result read_bytes(uint8_t *buf, uint32_t max_len, uint32_t &out_len)
         {
-            if(!serial || !buf || !max_len){return 0;}
+            out_len = 0;
+            if(!serial){return uart_result::INVALID_BUS;}
+            if(!is_init){return uart_result::NOT_INITIALIZED;}
+            if(!max_len){return uart_result::OK;}
+            if(!buf){return uart_result::INVALID_ARG;}
 
-            uint32_t len = 0;
-            while(serial->available() && len < max_len)
+            while(serial->available() && out_len < max_len)
             {
-                buf[len++] = serial->read();
+                buf[out_len++] = serial->read();
             }
 
-            return len;
+            return uart_result::OK;
         }
 
-        void write_bytes(const uint8_t *buf, uint32_t len)
+        uart_result write_bytes(const uint8_t *buf, uint32_t len)
         {
-            if(!serial || (!buf && len > 0)){return;}
+            if(!serial){return uart_result::INVALID_BUS;}
+            if(!is_init){return uart_result::NOT_INITIALIZED;}
+            if(!len){return uart_result::OK;}
+            if(!buf){return uart_result::INVALID_ARG;}
 
-            serial->write(buf, len);
+            size_t write_len = serial->write(buf, len);
             serial->flush();
+            if(write_len < len){return uart_result::SHORT_WRITE;}
+
+            return uart_result::OK;
         }
 
         HardwareSerial *get_HardwareSerial_handle()
@@ -72,8 +84,7 @@ static constexpr uint8_t UART_DEV_NUM = sizeof(uart_devs) / sizeof(uart_devs[0])
 /**
  * @brief 根据 bus_id 获取对应底层设备
  *
- * @note 超出范围时默认返回 bus0；
- * @note 保证始终返回有效指针；
+ * @note 超出范围时返回 nullptr，由上层返回 INVALID_BUS。
  */
 static uart_dev *get_dev(uint8_t bus_id)
 {
@@ -81,7 +92,7 @@ static uart_dev *get_dev(uint8_t bus_id)
     {
         return &uart_devs[bus_id];
     }
-    return &uart_devs[0];
+    return nullptr;
 }
 
 /**
@@ -96,10 +107,15 @@ uart_bus::uart_bus(uint8_t bus_id)
 
 /**
  * @brief 初始化 uart 总线
+ *
+ * @return 初始化结果
  */
-void uart_bus::init()
+uart_result uart_bus::init()
 {
-    get_dev(bus_id)->init();
+    uart_dev *dev = get_dev(bus_id);
+    if(!dev){return uart_result::INVALID_BUS;}
+
+    return dev->init();
 }
 
 /**
@@ -107,12 +123,20 @@ void uart_bus::init()
  *
  * @param buf 存放读取数据的缓冲区
  * @param max_len 缓冲区最大长度
+ * @param out_len 实际读取的字节数
  *
- * @return 实际读取的字节数
+ * @return 读取结果
  */
-uint32_t uart_bus::read_bytes(uint8_t *buf, uint32_t max_len)
+uart_result uart_bus::read_bytes(uint8_t *buf, uint32_t max_len, uint32_t &out_len)
 {
-    return get_dev(bus_id)->read_bytes(buf, max_len);
+    uart_dev *dev = get_dev(bus_id);
+    if(!dev)
+    {
+        out_len = 0;
+        return uart_result::INVALID_BUS;
+    }
+
+    return dev->read_bytes(buf, max_len, out_len);
 }
 
 /**
@@ -120,10 +144,15 @@ uint32_t uart_bus::read_bytes(uint8_t *buf, uint32_t max_len)
  *
  * @param buf 待写入的数据缓冲区
  * @param len 写入数据的长度
+ *
+ * @return 写入结果
  */
-void uart_bus::write_bytes(const uint8_t *buf, uint32_t len)
+uart_result uart_bus::write_bytes(const uint8_t *buf, uint32_t len)
 {
-    get_dev(bus_id)->write_bytes(buf, len);
+    uart_dev *dev = get_dev(bus_id);
+    if(!dev){return uart_result::INVALID_BUS;}
+
+    return dev->write_bytes(buf, len);
 }
 
 /**
@@ -133,5 +162,8 @@ void uart_bus::write_bytes(const uint8_t *buf, uint32_t len)
  */
 HardwareSerial *uart_bus::get_HardwareSerial_handle() const
 {
-    return get_dev(bus_id)->get_HardwareSerial_handle();
+    uart_dev *dev = get_dev(bus_id);
+    if(!dev){return nullptr;}
+
+    return dev->get_HardwareSerial_handle();
 }
