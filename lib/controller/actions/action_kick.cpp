@@ -5,8 +5,8 @@
 #include "ptk7350.h"
 #include "xbox.h"
 
-static constexpr float CAM_INITIAL_ANGLE = 60.0f;
-static constexpr float CAM_LOST_ANGLE = 60.0f;
+static constexpr float CAM_INITIAL_ANGLE = 45.0f;
+static constexpr float CAM_LOST_ANGLE = 45.0f;
 static constexpr float CAM_PD_P = 0.07f;
 static constexpr float CAM_PD_D = 0.05f;
 static constexpr float CAM_PD_STEP_LIMIT = 10.0f;
@@ -31,6 +31,7 @@ static constexpr uint16_t FRONTIER_KICK_ANGLE = 0;
 static constexpr uint32_t KICK_HOLD_MS = 0;
 static constexpr uint32_t KICK_COOLDOWN_MS = 2000;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
+static constexpr float KICK_LEG_HEIGHT_COUNT_OFFSET = 50.0f;
 
 /**
  * @brief 设置摄像头舵机角度
@@ -72,7 +73,7 @@ static controller::balance_request base_command(controller::action_io &ctx)
     cmd.command.enable_balance = true;
     cmd.command.enable_motor = true;
     cmd.command.enable_steering = true;
-    controller::actions::run_leg_control(ctx);
+    controller::actions::run_leg_control(ctx, KICK_LEG_HEIGHT_COUNT_OFFSET);
     return cmd;
 }
 

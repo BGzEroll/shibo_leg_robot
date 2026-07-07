@@ -38,7 +38,7 @@ namespace controller
         void set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel);
         void set_torque(uint8_t type);
         void reset_leg(leg_runtime &leg);
-        void run_leg_control(action_io &ctx);
+        void run_leg_control(action_io &ctx, float height_count_offset = 0.0f);
         void begin_mode(action_state &state, mode_id mode, jump_command jump = jump_command::IN_PLACE);
         bool recover_ready(action_state &state, const balance_core::status_snapshot &status, uint32_t tick_ms,
             float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms);

@@ -75,8 +75,9 @@ void controller::actions::reset_leg(leg_runtime &leg)
  * @brief 根据输入和横滚姿态更新腿部舵机控制
  *
  * @param ctx 动作输入输出上下文
+ * @param height_count_offset 腿高目标的舵机计数偏移量，正值抬高机身
  */
-void controller::actions::run_leg_control(action_io &ctx)
+void controller::actions::run_leg_control(action_io &ctx, float height_count_offset)
 {
     if((ctx.input.buttons & BTN_RIGHT) && !(ctx.input.buttons & ~BTN_RIGHT)){ctx.leg.roll_adjust += 0.025f;}
     if((ctx.input.buttons & BTN_LEFT) && !(ctx.input.buttons & ~BTN_LEFT)){ctx.leg.roll_adjust -= 0.025f;}
@@ -88,6 +89,8 @@ void controller::actions::run_leg_control(action_io &ctx)
     float leg_add = ctx.leg.roll_pid(roll_angle - ctx.leg.roll_adjust);
     int16_t left = (int16_t)(2048.0f + 8.4f * (30.0f - ctx.leg.height_base) - leg_add);
     int16_t right = (int16_t)(2048.0f - 8.4f * (30.0f - ctx.leg.height_base) - leg_add);
+    left = (int16_t)((float)left + height_count_offset);
+    right = (int16_t)((float)right - height_count_offset);
 
     left = constrain(left, SERVO_LEFT_MIN, SERVO_LEFT_MAX - 100);
     right = constrain(right, SERVO_RIGHT_MAX + 100, SERVO_RIGHT_MIN);
