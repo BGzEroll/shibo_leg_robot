@@ -65,6 +65,7 @@ namespace controller
         balance_core::status_snapshot &status;
         leg_runtime &leg;
         float max_linear_vel;
+        float max_steer_vel;
     };
 
     struct jump_runtime

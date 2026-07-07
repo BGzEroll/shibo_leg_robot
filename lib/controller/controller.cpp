@@ -185,7 +185,7 @@ void controller::update(uint32_t tick_ms)
     input.middle_calibration_request = consume_middle_calibration_request();
     update_camera(tick_ms);
 
-    controller::action_io ctx{input, status, leg, balance_info.max_linear_vel};
+    controller::action_io ctx{input, status, leg, balance_info.max_linear_vel, balance_info.max_steer_vel};
     controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
 
     balance_core::set_target(request.target);
