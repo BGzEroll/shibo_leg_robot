@@ -30,6 +30,7 @@ static constexpr uint16_t FRONTIER_READY_ANGLE = 100;
 static constexpr uint16_t FRONTIER_KICK_ANGLE = 0;
 static constexpr uint32_t KICK_HOLD_MS = 0;
 static constexpr uint32_t KICK_COOLDOWN_MS = 2000;
+static constexpr uint32_t KICK_EXIT_DELAY_MS = 500;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
 static constexpr float KICK_LEG_HEIGHT_COUNT_OFFSET = 50.0f;
 
@@ -275,16 +276,66 @@ static void update_kick_cooldown(controller::action_state &state, uint32_t tick_
 }
 
 /**
- * @brief 取消踢球模式并回到普通平衡
+ * @brief 启动踢球模式退出等待
+ *
+ * @param state 动作状态机状态
+ */
+static void start_kick_exit(controller::action_state &state)
+{
+    set_frontier(state, FRONTIER_KICK_ANGLE);
+    state.kick.kicking = false;
+    state.kick.kick_timer = 0;
+    state.timer = 0;
+    state.phase = controller::actions::EXIT_PREPARE;
+}
+
+/**
+ * @brief 推进踢球模式退出等待并在延时后回到普通平衡
  *
  * @param state 动作状态机状态
  * @param ctx 动作输入输出上下文
+ * @param tick_ms 本次更新周期，单位毫秒
+ *
+ * @return 正在处理退出流程时返回 true
  */
-static void cancel_kick(controller::action_state &state, controller::action_io &ctx)
+static bool update_kick_exit(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    set_frontier(state, FRONTIER_KICK_ANGLE);
+    if(state.phase != controller::actions::EXIT_PREPARE){return false;}
+
+    if((state.timer += tick_ms) < KICK_EXIT_DELAY_MS){return true;}
+
     controller::actions::reset_leg(ctx.leg);
     controller::actions::begin_mode(state, controller::mode_id::BALANCE);
+    return true;
+}
+
+/**
+ * @brief 处理两个踢球模式之间的按键切换
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ * @param current_mode 当前踢球模式
+ *
+ * @return 已切换模式时返回 true
+ */
+static bool switch_kick_mode(controller::action_state &state, const controller::action_io &ctx,
+    controller::mode_id current_mode)
+{
+    if(!(ctx.input.buttons & BTN_SELECT)){return false;}
+
+    if(current_mode != controller::mode_id::KICK_PLACE && (ctx.input.pressed_buttons & BTN_X))
+    {
+        controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
+        return true;
+    }
+
+    if(current_mode != controller::mode_id::KICK_RUN && (ctx.input.pressed_buttons & BTN_Y))
+    {
+        controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -315,9 +366,11 @@ controller::balance_request controller::actions::update_kick_place(controller::a
     controller::balance_request cmd = base_command(ctx);
     if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
     {
-        cancel_kick(state, ctx);
+        start_kick_exit(state);
         return cmd;
     }
+    if(update_kick_exit(state, ctx, tick_ms)){return cmd;}
+    if(switch_kick_mode(state, ctx, controller::mode_id::KICK_PLACE)){return cmd;}
 
     if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     update_kick_hold(state, tick_ms);
@@ -359,9 +412,11 @@ controller::balance_request controller::actions::update_kick_run(controller::act
     controller::balance_request cmd = base_command(ctx);
     if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
     {
-        cancel_kick(state, ctx);
+        start_kick_exit(state);
         return cmd;
     }
+    if(update_kick_exit(state, ctx, tick_ms)){return cmd;}
+    if(switch_kick_mode(state, ctx, controller::mode_id::KICK_RUN)){return cmd;}
 
     if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     update_kick_cooldown(state, tick_ms);
