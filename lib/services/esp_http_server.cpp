@@ -6,6 +6,8 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+/* ---- HTTP 页面与运行状态 ---- */
+
 static constexpr uint32_t BLE_SCAN_MS = 4000;
 static constexpr uint32_t HTTP_TASK_DELAY_MS = 50;
 static constexpr uint8_t BLE_SCAN_MAX = 24;
@@ -306,6 +308,8 @@ static String servo_calibration_html()
         </html>)HTML";
 }
 
+/* ---- HTTP 请求处理 ---- */
+
 /**
  * @brief 处理根页面请求
  */
@@ -462,6 +466,8 @@ static void handle_servo_middle_calibration_status()
     server.send(200, "application/json", json);
 }
 
+/* ---- esp_http_server 公共 API ---- */
+
 /**
  * @brief 初始化 HTTP 服务并注册路由
  */
@@ -485,6 +491,8 @@ void esp_http_server::init()
     server.begin();
     server_started = true;
 }
+
+/* ---- RTOS 任务入口 ---- */
 
 /**
  * @brief HTTP 服务任务入口

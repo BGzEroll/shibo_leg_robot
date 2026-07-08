@@ -10,6 +10,8 @@ static constexpr uint32_t MIDDLE_CALIBRATION_TORQUE_OFF_MS = 500;
 static constexpr uint32_t MIDDLE_CALIBRATION_RUN_MS = 2000;
 static constexpr uint32_t MIDDLE_CALIBRATION_SUCCESS_MS = 2500;
 
+/* ---- 坐下与校准内部流程 ---- */
+
 /**
  * @brief 判断左右腿舵机当前位置是否已经接近中位
  *
@@ -165,6 +167,8 @@ static controller::balance_request update_sit_flow(controller::action_state &sta
 
     return cmd;
 }
+
+/* ---- 坐下与校准动作 API ---- */
 
 /**
  * @brief 更新 SIT 模式状态机并生成平衡请求

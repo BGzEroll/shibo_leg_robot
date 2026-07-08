@@ -1,5 +1,7 @@
 #include "uart_bus.h"
 
+/* ---- UART 设备资源与内部实现 ---- */
+
 extern HardwareSerial Serial;
 extern HardwareSerial Serial1;
 extern HardwareSerial Serial2;
@@ -94,6 +96,8 @@ static uart_dev *get_dev(uint8_t bus_id)
     }
     return nullptr;
 }
+
+/* ---- uart_bus 公共 API ---- */
 
 /**
  * @brief uart_bus 构造函数

@@ -1,5 +1,7 @@
 #include "i2c_bus.h"
 
+/* ---- I2C 设备资源与内部实现 ---- */
+
 static TwoWire wire_0 = TwoWire(0);
 static TwoWire wire_1 = TwoWire(1);
 
@@ -123,6 +125,8 @@ static i2c_dev *get_dev(uint8_t bus_id)
     }
     return nullptr;
 }
+
+/* ---- i2c_bus 公共 API ---- */
 
 /**
  * @brief i2c 总线构造函数

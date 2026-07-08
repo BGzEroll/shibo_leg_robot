@@ -7,6 +7,8 @@
 #include "mpu6050_dev.h"
 #include "sts3032.h"
 
+/* ---- LQI 内部模型与运行状态 ---- */
+
 struct lqi_car_model
 {
     float r = 0.0f;
@@ -100,6 +102,8 @@ static void init_lqi()
     memset(&lqi_core.integral, 0, sizeof(lqi_core.integral));
 }
 
+/* ---- 平衡核心运行状态 ---- */
+
 struct sensor_snapshot
 {
     bool imu_valid = false;
@@ -153,6 +157,8 @@ struct core_runtime
 };
 
 static core_runtime core;
+
+/* ---- 平衡控制内部流程 ---- */
 
 /**
  * @brief 将舵机位置计数转换为腿长估计值
@@ -539,6 +545,8 @@ static void control_step(uint32_t tick_ms)
     }
 }
 
+/* ---- balance_core 公共 API ---- */
+
 /**
  * @brief 应用平衡核心普通运动控制请求
  *
@@ -657,6 +665,8 @@ void balance_core::init()
     mpu6050_dev::init();
     motor::init();
 }
+
+/* ---- RTOS 任务入口 ---- */
 
 /**
  * @brief 平衡核心高频 IO 任务入口

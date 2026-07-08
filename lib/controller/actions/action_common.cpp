@@ -6,6 +6,8 @@
 static constexpr float LEG_HEIGHT_BASE_MIN = -10.0f;
 static constexpr float LEG_HEIGHT_BASE_MAX = 52.0f;
 
+/* ---- 基础动作工具 ---- */
+
 /**
  * @brief 将角度归一化到 -PI 到 PI 范围内
  *
@@ -58,6 +60,8 @@ void controller::actions::set_torque(uint8_t type)
     sts3032::set_torque_switch(SERVO_LEFT, type);
     sts3032::set_torque_switch(SERVO_RIGHT, type);
 }
+
+/* ---- 腿部与恢复控制 ---- */
 
 /**
  * @brief 复位腿部运行状态和横滚 PID
@@ -143,6 +147,8 @@ controller::balance_request controller::actions::recover_command(action_state &s
     run_leg_control(ctx);
     return cmd;
 }
+
+/* ---- 姿态序列控制 ---- */
 
 /**
  * @brief 按姿态序列推进舵机动作

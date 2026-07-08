@@ -34,6 +34,8 @@ static constexpr uint32_t KICK_EXIT_DELAY_MS = 500;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
 static constexpr float KICK_LEG_HEIGHT_COUNT_OFFSET = 50.0f;
 
+/* ---- 踢球基础控制 ---- */
+
 /**
  * @brief 设置摄像头舵机角度
  *
@@ -182,6 +184,8 @@ static bool manual_linear_active(const controller::action_io &ctx)
 {
     return fabsf(ctx.input.linear_cmd) > ctx.max_linear_vel * 0.05f;
 }
+
+/* ---- 踢球状态流程 ---- */
 
 /**
  * @brief 处理丢失目标后的追踪复位
@@ -350,6 +354,8 @@ static void prepare_kick(controller::action_state &state, controller::action_io 
     set_camera(state, CAM_INITIAL_ANGLE);
     state.phase = controller::actions::MOVING;
 }
+
+/* ---- 踢球动作 API ---- */
 
 /**
  * @brief 更新原地踢球模式状态机并生成平衡请求

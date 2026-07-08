@@ -3,6 +3,8 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+/* ---- WiFi 配置与运行状态 ---- */
+
 static constexpr const char *NVS_NAMESPACE = "wifi";
 static constexpr const char *NVS_SSID_KEY = "ssid";
 static constexpr const char *NVS_PASS_KEY = "pass";
@@ -16,6 +18,8 @@ static constexpr wifi_power_t WIFI_TX_POWER = WIFI_POWER_8_5dBm;
 static bool portal_active = false;
 static bool pending_sta_only = false;
 static uint32_t sta_only_at_ms = 0;
+
+/* ---- WiFi 内部流程 ---- */
 
 /**
  * @brief 应用 WiFi 低功耗配置
@@ -117,6 +121,8 @@ static void switch_to_station_only()
     portal_active = false;
     pending_sta_only = false;
 }
+
+/* ---- wifi_dev 公共 API ---- */
 
 /**
  * @brief 查询 STA 是否已经连接

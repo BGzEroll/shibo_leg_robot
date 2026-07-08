@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+/* ---- Xbox 连接与生命周期 ---- */
+
 /**
  * @brief 构造 Xbox 手柄驱动对象
  *
@@ -45,6 +47,8 @@ void xbox::update()
     parser_xbox_data();
     update_vibration();
 }
+
+/* ---- Xbox 振动控制 ---- */
 
 /**
  * @brief 设置按键反馈振动
@@ -126,6 +130,8 @@ void xbox::set_trigger_vibration(uint8_t trigger, uint32_t duration)
     vibration_state = vibration_state::TRIGGER;
     vibration_start_time = millis();
 }
+
+/* ---- Xbox 输入通知与解析 ---- */
 
 /**
  * @brief 处理 Xbox 蓝牙通知和连接状态

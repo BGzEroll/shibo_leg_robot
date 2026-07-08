@@ -13,6 +13,8 @@
 #define MPU6050_ACCEL_CONFIG        0x1C
 #define MPU6050_PWR_MGMT_1          0x6B
 
+/* ---- MPU6050 配置与采样 ---- */
+
 /**
  * @brief 构造 MPU6050 驱动对象
  *
@@ -62,6 +64,8 @@ void mpu6050::get_raw()
     i2c.read_bytes(addr, 0x3B, raw, 14);
 }
 
+/* ---- MPU6050 姿态解算 ---- */
+
 /**
  * @brief 处理原始数据并更新姿态估计
  */
@@ -107,6 +111,8 @@ void mpu6050::process_data()
 
     prev_Ts = now;
 }
+
+/* ---- MPU6050 寄存器与校准 ---- */
 
 /**
  * @brief 写入 MPU6050 配置寄存器

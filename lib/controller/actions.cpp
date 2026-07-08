@@ -6,6 +6,8 @@
 #include "actions/action_sit.h"
 #include "xbox.h"
 
+/* ---- 动作模式切换 ---- */
+
 /**
  * @brief 切换动作模式并初始化该模式的运行状态
  *
@@ -30,6 +32,8 @@ void controller::actions::begin_mode(controller::action_state &state, controller
     if(jump == controller::jump_command::TURN_LEFT){state.jump.turn_dir = 1;}
     if(jump == controller::jump_command::TURN_RIGHT){state.jump.turn_dir = -1;}
 }
+
+/* ---- 基础动作状态机 ---- */
 
 /**
  * @brief 更新 BOOT 模式状态机并生成平衡请求
@@ -135,6 +139,8 @@ static controller::balance_request update_balance(controller::action_state &stat
     if(ctx.input.pressed_buttons & BTN_B){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::TURN_RIGHT);}
     return cmd;
 }
+
+/* ---- 动作调度 API ---- */
 
 /**
  * @brief 初始化动作状态机

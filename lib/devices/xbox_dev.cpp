@@ -7,6 +7,8 @@
 #include <Preferences.h>
 #include <string.h>
 
+/* ---- BLE 配置与运行状态 ---- */
+
 static constexpr const char *NVS_NAMESPACE = "xbox";
 static constexpr const char *NVS_TARGET_KEY = "target";
 static constexpr uint16_t XBOX_APPEARANCE = 964;
@@ -25,6 +27,8 @@ class ble_scan_callbacks : public NimBLEScanCallbacks
 };
 
 static ble_scan_callbacks scan_callbacks;
+
+/* ---- BLE 连接内部流程 ---- */
 
 /**
  * @brief 清空 Xbox 输入队列状态
@@ -149,6 +153,8 @@ static bool is_xbox_device(const NimBLEAdvertisedDevice *device)
     return hex == XBOX_MANUFACTURER_NORMAL || hex == XBOX_MANUFACTURER_SEARCHING;
 }
 
+/* ---- xbox_dev 公共 API ---- */
+
 /**
  * @brief 获取 Xbox 输入数据队列
  *
@@ -254,6 +260,8 @@ void xbox_dev::init()
     xbox_data_queue = xQueueCreate(1, sizeof(xbox_dev::data));
     rebuild_gamepad();
 }
+
+/* ---- RTOS 任务入口 ---- */
 
 /**
  * @brief Xbox 输入采样任务入口

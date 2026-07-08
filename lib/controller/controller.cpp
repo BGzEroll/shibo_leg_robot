@@ -12,6 +12,8 @@ namespace host_comm
     void init();
 }
 
+/* ---- 控制器运行状态 ---- */
+
 static controller::action_state action;
 static controller::leg_runtime leg;
 static controller::control_input input;
@@ -24,6 +26,8 @@ static int16_t cam_last_angle = -1;
 static bool middle_calibration_requested = false;
 static bool middle_calibration_finished = false;
 static portMUX_TYPE request_lock = portMUX_INITIALIZER_UNLOCKED;
+
+/* ---- 控制器内部流程 ---- */
 
 /**
  * @brief 将动作层语义请求转换为平衡核心当前控制命令
@@ -183,6 +187,8 @@ static void update_camera(uint32_t tick_ms)
         ptk7350::cam_servo.set_angle((uint16_t)cam_angle);
     }
 }
+
+/* ---- controller 公共 API ---- */
 
 /**
  * @brief 查询舵机中位校准流程是否已经成功执行

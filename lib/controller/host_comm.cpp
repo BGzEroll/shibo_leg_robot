@@ -10,6 +10,8 @@ namespace host_comm
     void init();
 }
 
+/* ---- 上位机通信运行状态 ---- */
+
 static constexpr int16_t VISION_LOST_VALUE = 32767;
 static constexpr uint32_t VISION_TIMEOUT_MS = 350;
 
@@ -22,6 +24,8 @@ static uart_bus host_uart(0);
 static portMUX_TYPE vision_lock = portMUX_INITIALIZER_UNLOCKED;
 static host_comm::vision_measurement vision_snapshot;
 static uint32_t vision_seq = 0;
+
+/* ---- 状态访问 API ---- */
 
 /**
  * @brief 获取上位机遥控输入队列
@@ -54,6 +58,8 @@ bool host_comm::vision_latest(vision_measurement &out)
     }
     return true;
 }
+
+/* ---- 串口接收与解析 ---- */
 
 /**
  * @brief 解析上位机发送的 Xbox 输入帧
@@ -193,6 +199,8 @@ static void update_rx()
     parse_rx();
 }
 
+/* ---- 调试状态发送 ---- */
+
 /**
  * @brief 向发送缓冲区写入一个浮点字段
  *
@@ -246,6 +254,8 @@ static void send_status(uint32_t tick_ms)
     tx_buf[idx++] = checksum;
     host_uart.write_bytes(tx_buf, idx);
 }
+
+/* ---- 初始化与任务入口 ---- */
 
 /**
  * @brief 初始化上位机通信模块
