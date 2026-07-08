@@ -241,15 +241,12 @@ static void update_linear_reference(float dt)
 {
     const float tau = 0.024f;
     const float max_accel = 1.60f;
-    const float max_decel = 3.10f;
-    const float max_release_decel = 7.20f;
-    const float release_duration = 0.45f;
+    const float release_duration = 0.20f;
     const float release_stop_speed = 0.035f;
-    const float dead_zone = lqi_core.limit.max_linear_vel * 0.05f;
 
     float target = core.motion.linear_vel;
-    bool zero_cmd = fabsf(target) < dead_zone;
-    bool had_cmd = fabsf(core.last_linear_target) >= dead_zone;
+    bool zero_cmd = target == 0.0f;
+    bool had_cmd = core.last_linear_target != 0.0f;
     core.lpf_linear_target += (target - core.lpf_linear_target) * (1.0f - expf(-dt / tau));
 
     if(!zero_cmd)
@@ -264,7 +261,7 @@ static void update_linear_reference(float dt)
         core.lpf_linear_target = 0.0f;
     }
 
-    float target_ref = fabsf(core.lpf_linear_target) < dead_zone ? 0.0f : core.lpf_linear_target;
+    float target_ref = core.lpf_linear_target;
     if(core.linear_release)
     {
         target_ref = 0.0f;
@@ -277,15 +274,15 @@ static void update_linear_reference(float dt)
         }
     }
 
-    float delta = target_ref - lqi_core.ref.linear_vel;
-    float rate = fabsf(target_ref) > fabsf(lqi_core.ref.linear_vel) ? max_accel : max_decel;
-    if(core.linear_release){rate = max_release_decel;}
-
-    float max_step = rate * dt;
-    lqi_core.ref.linear_vel += constrain(delta, -max_step, max_step);
-    if(fabsf(target_ref) < dead_zone && fabsf(lqi_core.ref.linear_vel) < max_step)
+    if(fabsf(target_ref) > fabsf(lqi_core.ref.linear_vel))
     {
-        lqi_core.ref.linear_vel = 0.0f;
+        float delta = target_ref - lqi_core.ref.linear_vel;
+        float max_step = max_accel * dt;
+        lqi_core.ref.linear_vel += constrain(delta, -max_step, max_step);
+    }
+    else
+    {
+        lqi_core.ref.linear_vel = target_ref;
     }
 
     if(!core.linear_release)
@@ -296,7 +293,7 @@ static void update_linear_reference(float dt)
                   lqi_core.integral_clamp.linear_vel_error);
     }
 
-    core.last_linear_target = zero_cmd ? 0.0f : target;
+    core.last_linear_target = target;
 }
 
 /**
