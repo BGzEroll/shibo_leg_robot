@@ -8,11 +8,6 @@
 #include "mpu6050_dev.h"
 #include "sts3032.h"
 
-namespace balance_core
-{
-    void init();
-}
-
 namespace lqi
 {
     void init();
@@ -30,14 +25,35 @@ struct sensor_snapshot
     int16_t servo_position[2]{};
 };
 
+struct core_status_snapshot
+{
+    uint32_t timestamp_us = 0;
+    float pitch_angle = 0.0f;
+    float pitch_rate = 0.0f;
+    float avg_linear_pos = 0.0f;
+    float avg_linear_vel = 0.0f;
+    float yaw_angle = 0.0f;
+    float yaw_rate = 0.0f;
+    float reference_linear_vel = 0.0f;
+    float reference_yaw_rate = 0.0f;
+    float input[2]{};
+    float feedback_vector[6]{};
+    float output[2]{};
+    float roll_angle = 0.0f;
+    float leg_height[2]{};
+    float avg_leg_height = 0.0f;
+};
+
 static QueueHandle_t status_queue = nullptr;
 static bool motor_output_enabled = true;
 
 struct core_runtime
 {
-    balance_core::target target;
-    balance_core::command command;
-    balance_core::status_snapshot status;
+    balance_core::motion_control motion;
+    balance_core::direct_output_control direct_output;
+    balance_core::recover_control recover;
+    balance_core::feedback_override feedback;
+    core_status_snapshot status;
     LowPassFilter vel_filter{0.008f};
     float last_height = 0.0f;
     float lpf_linear_target = 0.0f;
@@ -138,7 +154,7 @@ static void update_linear_reference(float dt)
     const float release_stop_speed = 0.035f;
     const float dead_zone = lqi::limit.max_linear_vel * 0.05f;
 
-    float target = core.target.linear_vel;
+    float target = core.motion.linear_vel;
     bool zero_cmd = fabsf(target) < dead_zone;
     bool had_cmd = fabsf(core.last_linear_target) >= dead_zone;
     core.lpf_linear_target += (target - core.lpf_linear_target) * (1.0f - expf(-dt / tau));
@@ -197,7 +213,7 @@ static void update_linear_reference(float dt)
  */
 static void update_yaw_reference(float dt)
 {
-    if(!core.command.enable_steering)
+    if(!core.motion.enable_steering)
     {
         core.lpf_yaw_target = 0.0f;
         lqi::ref.yaw_rate = 0.0f;
@@ -206,10 +222,10 @@ static void update_yaw_reference(float dt)
     }
 
     const float tau = 0.009f;
-    core.lpf_yaw_target += (core.target.yaw_rate - core.lpf_yaw_target) * (1.0f - expf(-dt / tau));
+    core.lpf_yaw_target += (core.motion.yaw_rate - core.lpf_yaw_target) * (1.0f - expf(-dt / tau));
     lqi::ref.yaw_rate = core.lpf_yaw_target;
 
-    if(core.command.suppress_yaw_integral)
+    if(!core.feedback.enable_yaw_integral)
     {
         lqi::integral.yaw_rate_error = 0.0f;
         return;
@@ -317,7 +333,7 @@ static void publish_motor_target(float left, float right)
  */
 static void solve_output()
 {
-    if(!core.command.enable_motor)
+    if(!core.motion.enable_motor)
     {
         core.status.output[0] = 0.0f;
         core.status.output[1] = 0.0f;
@@ -336,14 +352,14 @@ static void solve_output()
         motor::right.enable();
         motor_output_enabled = true;
     }
-    if(core.command.direct_output)
+    if(core.direct_output.enable)
     {
-        core.status.output[0] = core.target.direct_left;
-        core.status.output[1] = core.target.direct_right;
-        publish_motor_target(core.target.direct_left, core.target.direct_right);
+        core.status.output[0] = core.direct_output.left;
+        core.status.output[1] = core.direct_output.right;
+        publish_motor_target(core.direct_output.left, core.direct_output.right);
         return;
     }
-    if(!core.command.enable_balance)
+    if(!core.motion.enable_balance)
     {
         core.status.output[0] = 0.0f;
         core.status.output[1] = 0.0f;
@@ -361,17 +377,17 @@ static void solve_output()
         lqi::integral.yaw_rate_error
     };
 
-    if(core.command.recover_active)
+    if(core.recover.enable)
     {
         x[2] = x[3] = x[4] = x[5] = 0.0f;
     }
-    if(core.command.suppress_linear_feedback){x[2] = 0.0f;}
-    if(core.command.suppress_yaw_feedback || !core.command.enable_steering)
+    if(!core.feedback.enable_linear_feedback){x[2] = 0.0f;}
+    if(!core.feedback.enable_yaw_feedback || !core.motion.enable_steering)
     {
         x[3] = 0.0f;
         x[5] = 0.0f;
     }
-    else if(core.command.suppress_yaw_integral)
+    else if(!core.feedback.enable_yaw_integral)
     {
         x[5] = 0.0f;
     }
@@ -384,7 +400,7 @@ static void solve_output()
         {
             core.status.output[i] += lqi::feedback_gain[i][j] * x[j];
         }
-        core.status.output[i] *= core.command.output_blend;
+        core.status.output[i] *= core.recover.enable ? core.recover.output_blend : 1.0f;
     }
 
     publish_motor_target(core.status.output[0], core.status.output[1]);
@@ -403,10 +419,10 @@ static void control_step(uint32_t tick_ms)
     update_state(sensor);
     update_gain(sensor.avg_leg_height);
 
-    if(core.command.reset_reference){reset_reference();}
-    if(core.command.reset_yaw_integral){lqi::integral.yaw_rate_error = 0.0f;}
+    if(core.motion.reset_reference){reset_reference();}
+    if(core.motion.reset_yaw_integral){lqi::integral.yaw_rate_error = 0.0f;}
 
-    if(core.command.enable_balance)
+    if(core.motion.enable_balance)
     {
         update_linear_reference(dt);
         update_yaw_reference(dt);
@@ -421,8 +437,8 @@ static void control_step(uint32_t tick_ms)
     core.status.yaw_rate = lqi::state.yaw_rate;
     core.status.reference_linear_vel = lqi::ref.linear_vel;
     core.status.reference_yaw_rate = lqi::ref.yaw_rate;
-    core.status.input[0] = core.target.linear_vel;
-    core.status.input[1] = core.target.yaw_rate;
+    core.status.input[0] = core.motion.linear_vel;
+    core.status.input[1] = core.motion.yaw_rate;
     core.status.roll_angle = sensor.roll_angle;
     core.status.leg_height[0] = sensor.leg_height[0];
     core.status.leg_height[1] = sensor.leg_height[1];
@@ -437,35 +453,95 @@ static void control_step(uint32_t tick_ms)
 }
 
 /**
- * @brief 设置平衡核心目标量
+ * @brief 应用平衡核心普通运动控制请求
  *
- * @param target 目标值
+ * @param control 运动控制请求
  */
-void balance_core::set_target(const balance_core::target &target)
+void balance_core::apply_motion_control(const balance_core::motion_control &control)
 {
-    core.target = target;
+    core.motion = control;
 }
 
 /**
- * @brief 设置平衡核心控制命令
+ * @brief 应用平衡核心直出电机请求
  *
- * @param command 控制命令
+ * @param control 直出电机请求
  */
-void balance_core::set_command(const balance_core::command &command)
+void balance_core::apply_direct_output(const balance_core::direct_output_control &control)
 {
-    core.command = command;
+    core.direct_output = control;
 }
 
 /**
- * @brief 读取平衡核心最新状态快照
+ * @brief 应用平衡核心恢复控制请求
  *
- * @param out 输出状态快照
- *
- * @return 条件是否成立
+ * @param control 恢复控制请求
  */
-bool balance_core::get_status(balance_core::status_snapshot &out)
+void balance_core::apply_recover_control(const balance_core::recover_control &control)
 {
-    return status_queue && xQueuePeek(status_queue, &out, 0) == pdTRUE;
+    core.recover = control;
+}
+
+/**
+ * @brief 应用平衡核心反馈覆盖请求
+ *
+ * @param override_control 反馈覆盖请求
+ */
+void balance_core::apply_feedback_override(const balance_core::feedback_override &override_control)
+{
+    core.feedback = override_control;
+}
+
+/**
+ * @brief 读取动作层使用的平衡核心运动状态
+ *
+ * @param out 输出运动状态
+ *
+ * @return 读取成功时返回 true
+ */
+bool balance_core::get_motion_status(balance_core::motion_status &out)
+{
+    core_status_snapshot status;
+    if(!status_queue || xQueuePeek(status_queue, &status, 0) != pdTRUE){return false;}
+
+    out.timestamp_us = status.timestamp_us;
+    out.pitch_angle = status.pitch_angle;
+    out.pitch_rate = status.pitch_rate;
+    out.avg_linear_vel = status.avg_linear_vel;
+    out.yaw_angle = status.yaw_angle;
+    out.yaw_rate = status.yaw_rate;
+    out.roll_angle = status.roll_angle;
+    out.avg_leg_height = status.avg_leg_height;
+    return true;
+}
+
+/**
+ * @brief 读取调试使用的平衡核心状态快照
+ *
+ * @param out 输出调试快照
+ *
+ * @return 读取成功时返回 true
+ */
+bool balance_core::get_debug_snapshot(balance_core::debug_snapshot &out)
+{
+    core_status_snapshot status;
+    if(!status_queue || xQueuePeek(status_queue, &status, 0) != pdTRUE){return false;}
+
+    out.timestamp_us = status.timestamp_us;
+    out.pitch_angle = status.pitch_angle;
+    out.pitch_rate = status.pitch_rate;
+    out.avg_linear_pos = status.avg_linear_pos;
+    out.avg_linear_vel = status.avg_linear_vel;
+    out.yaw_angle = status.yaw_angle;
+    out.yaw_rate = status.yaw_rate;
+    out.reference_linear_vel = status.reference_linear_vel;
+    out.reference_yaw_rate = status.reference_yaw_rate;
+    memcpy(out.input, status.input, sizeof(out.input));
+    memcpy(out.feedback_vector, status.feedback_vector, sizeof(out.feedback_vector));
+    memcpy(out.output, status.output, sizeof(out.output));
+    out.roll_angle = status.roll_angle;
+    memcpy(out.leg_height, status.leg_height, sizeof(out.leg_height));
+    return true;
 }
 
 /**
@@ -478,7 +554,6 @@ balance_core::info balance_core::get_info()
     balance_core::info info;
     info.max_linear_vel = lqi::limit.max_linear_vel;
     info.max_steer_vel = lqi::limit.max_steer_vel;
-    info.wheel_radius = lqi::car.r;
     return info;
 }
 
@@ -489,7 +564,7 @@ void balance_core::init()
 {
     lqi::init();
 
-    status_queue = xQueueCreate(1, sizeof(balance_core::status_snapshot));
+    status_queue = xQueueCreate(1, sizeof(core_status_snapshot));
 
     sts3032::init();
     mpu6050_dev::init();

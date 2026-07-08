@@ -29,6 +29,14 @@ namespace controller
         TURN_RIGHT
     };
 
+    enum class balance_drive_mode : uint8_t
+    {
+        STOP = 0,
+        BALANCE,
+        DIRECT_OUTPUT,
+        RECOVER
+    };
+
     struct control_input
     {
         uint16_t raw_buttons = 0;
@@ -55,14 +63,24 @@ namespace controller
 
     struct balance_request
     {
-        balance_core::target target;
-        balance_core::command command;
+        balance_drive_mode mode = balance_drive_mode::STOP;
+        bool enable_steering = false;
+        bool reset_reference = false;
+        bool reset_yaw_integral = false;
+        float linear_vel = 0.0f;
+        float yaw_rate = 0.0f;
+        float direct_left = 0.0f;
+        float direct_right = 0.0f;
+        float recover_blend = 1.0f;
+        bool enable_linear_feedback = true;
+        bool enable_yaw_feedback = true;
+        bool enable_yaw_integral = true;
     };
 
     struct action_io
     {
         control_input &input;
-        balance_core::status_snapshot &status;
+        balance_core::motion_status &status;
         leg_runtime &leg;
         float max_linear_vel;
         float max_steer_vel;

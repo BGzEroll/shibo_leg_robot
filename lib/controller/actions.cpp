@@ -92,11 +92,10 @@ static controller::balance_request update_boot(controller::action_state &state, 
 static controller::balance_request update_balance(controller::action_state &state, controller::action_io &ctx)
 {
     controller::balance_request cmd;
-    cmd.command.enable_balance = true;
-    cmd.command.enable_motor = true;
-    cmd.command.enable_steering = true;
-    cmd.target.linear_vel = ctx.input.linear_cmd;
-    cmd.target.yaw_rate = ctx.input.yaw_cmd;
+    cmd.mode = controller::balance_drive_mode::BALANCE;
+    cmd.enable_steering = true;
+    cmd.linear_vel = ctx.input.linear_cmd;
+    cmd.yaw_rate = ctx.input.yaw_cmd;
     controller::actions::run_leg_control(ctx);
 
     if((ctx.input.pressed_buttons & BTN_LS) &&

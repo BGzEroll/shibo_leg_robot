@@ -7,11 +7,6 @@
 #include "xbox.h"
 #include "xbox_dev.h"
 
-namespace balance_core
-{
-    void init();
-}
-
 namespace host_comm
 {
     void init();
@@ -20,7 +15,7 @@ namespace host_comm
 static controller::action_state action;
 static controller::leg_runtime leg;
 static controller::control_input input;
-static balance_core::status_snapshot status;
+static balance_core::motion_status status;
 static balance_core::info balance_info;
 static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
@@ -29,6 +24,60 @@ static int16_t cam_last_angle = -1;
 static bool middle_calibration_requested = false;
 static bool middle_calibration_finished = false;
 static portMUX_TYPE request_lock = portMUX_INITIALIZER_UNLOCKED;
+
+/**
+ * @brief 将动作层语义请求转换为平衡核心当前控制命令
+ *
+ * @param request 动作层平衡请求
+ */
+static void apply_balance_request(const controller::balance_request &request)
+{
+    balance_core::motion_control motion;
+    balance_core::direct_output_control direct_output;
+    balance_core::recover_control recover;
+    balance_core::feedback_override feedback;
+
+    switch(request.mode)
+    {
+        case controller::balance_drive_mode::BALANCE:
+            motion.enable_motor = true;
+            motion.enable_balance = true;
+            motion.enable_steering = request.enable_steering;
+            motion.linear_vel = request.linear_vel;
+            motion.yaw_rate = request.yaw_rate;
+            break;
+
+        case controller::balance_drive_mode::DIRECT_OUTPUT:
+            motion.enable_motor = true;
+            direct_output.enable = true;
+            direct_output.left = request.direct_left;
+            direct_output.right = request.direct_right;
+            break;
+
+        case controller::balance_drive_mode::RECOVER:
+            motion.enable_motor = true;
+            motion.enable_balance = true;
+            motion.enable_steering = request.enable_steering;
+            recover.enable = true;
+            recover.output_blend = request.recover_blend;
+            break;
+
+        case controller::balance_drive_mode::STOP:
+        default:
+            break;
+    }
+
+    motion.reset_reference = request.reset_reference;
+    motion.reset_yaw_integral = request.reset_yaw_integral;
+    feedback.enable_linear_feedback = request.enable_linear_feedback;
+    feedback.enable_yaw_feedback = request.enable_yaw_feedback;
+    feedback.enable_yaw_integral = request.enable_yaw_integral;
+
+    balance_core::apply_motion_control(motion);
+    balance_core::apply_direct_output(direct_output);
+    balance_core::apply_recover_control(recover);
+    balance_core::apply_feedback_override(feedback);
+}
 
 /**
  * @brief 对输入值应用死区并重新归一化
@@ -180,7 +229,7 @@ bool controller::request_middle_calibration()
  */
 void controller::update(uint32_t tick_ms)
 {
-    balance_core::get_status(status);
+    balance_core::get_motion_status(status);
     sample_input();
     input.middle_calibration_request = consume_middle_calibration_request();
     update_camera(tick_ms);
@@ -188,8 +237,7 @@ void controller::update(uint32_t tick_ms)
     controller::action_io ctx{input, status, leg, balance_info.max_linear_vel, balance_info.max_steer_vel};
     controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
 
-    balance_core::set_target(request.target);
-    balance_core::set_command(request.command);
+    apply_balance_request(request);
 }
 
 /**

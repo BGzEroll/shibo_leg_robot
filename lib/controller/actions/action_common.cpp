@@ -110,7 +110,7 @@ void controller::actions::run_leg_control(action_io &ctx, float height_count_off
  *
  * @return 已经可以退出恢复阶段时返回 true
  */
-bool controller::actions::recover_ready(action_state &state, const balance_core::status_snapshot &status, uint32_t tick_ms,
+bool controller::actions::recover_ready(action_state &state, const balance_core::motion_status &status, uint32_t tick_ms,
     float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms)
 {
     state.elapsed += tick_ms;
@@ -138,10 +138,8 @@ bool controller::actions::recover_ready(action_state &state, const balance_core:
 controller::balance_request controller::actions::recover_command(action_state &state, action_io &ctx)
 {
     balance_request cmd;
-    cmd.command.enable_balance = true;
-    cmd.command.enable_motor = true;
-    cmd.command.recover_active = true;
-    cmd.command.output_blend = constrain((float)state.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
+    cmd.mode = controller::balance_drive_mode::RECOVER;
+    cmd.recover_blend = constrain((float)state.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
     run_leg_control(ctx);
     return cmd;
 }

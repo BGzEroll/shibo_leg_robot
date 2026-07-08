@@ -71,11 +71,10 @@ static void set_frontier(controller::action_state &state, uint16_t angle)
 static controller::balance_request base_command(controller::action_io &ctx)
 {
     controller::balance_request cmd;
-    cmd.command.enable_balance = true;
-    cmd.command.enable_motor = true;
-    cmd.command.enable_steering = true;
-    cmd.target.linear_vel = ctx.input.linear_cmd;
-    cmd.target.yaw_rate = ctx.input.yaw_cmd;
+    cmd.mode = controller::balance_drive_mode::BALANCE;
+    cmd.enable_steering = true;
+    cmd.linear_vel = ctx.input.linear_cmd;
+    cmd.yaw_rate = ctx.input.yaw_cmd;
     controller::actions::run_leg_control(ctx, KICK_LEG_HEIGHT_COUNT_OFFSET);
     return cmd;
 }
@@ -384,8 +383,8 @@ controller::balance_request controller::actions::update_kick_place(controller::a
     }
 
     if(consume_vision_step(state, vision)){aim_camera(state, vision.dy);}
-    cmd.target.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
-    state.kick.yaw_rate = cmd.target.yaw_rate;
+    cmd.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
+    state.kick.yaw_rate = cmd.yaw_rate;
 
     if(state.kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
     {
@@ -440,12 +439,12 @@ controller::balance_request controller::actions::update_kick_run(controller::act
             if(fabsf(err) < YAW_ALIGN_LIMIT)
             {
                 state.kick.aligned = true;
-                if(!manual_linear_active(ctx)){cmd.target.linear_vel = RUN_BACK_VEL;}
+                if(!manual_linear_active(ctx)){cmd.linear_vel = RUN_BACK_VEL;}
             }
             else
             {
                 float align_yaw_rate = constrain(err * YAW_ALIGN_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
-                cmd.target.yaw_rate = combine_yaw_rate(ctx, align_yaw_rate);
+                cmd.yaw_rate = combine_yaw_rate(ctx, align_yaw_rate);
             }
             return cmd;
         }
@@ -464,8 +463,8 @@ controller::balance_request controller::actions::update_kick_run(controller::act
     }
 
     if(consume_vision_step(state, vision)){aim_camera(state, vision.dy);}
-    cmd.target.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
-    state.kick.yaw_rate = cmd.target.yaw_rate;
+    cmd.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
+    state.kick.yaw_rate = cmd.yaw_rate;
 
     if(state.kick.chased)
     {
@@ -485,7 +484,7 @@ controller::balance_request controller::actions::update_kick_run(controller::act
 
     int16_t ob_y = OB_BALL_DY - vision.dy;
     float forward = constrain((float)ob_y * CHASE_LINEAR_KP, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
-    if(!manual_linear_active(ctx)){cmd.target.linear_vel = forward;}
+    if(!manual_linear_active(ctx)){cmd.linear_vel = forward;}
     ready_kick(state);
     return cmd;
 }

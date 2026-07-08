@@ -13,10 +13,9 @@ static controller::balance_request update_jump_command(controller::action_state 
     controller::balance_request cmd;
     bool linear_jump = state.jump.linear_dir != 0;
     bool yaw_jump = state.jump.turn_dir != 0 || linear_jump;
-    cmd.command.enable_balance = true;
-    cmd.command.enable_motor = true;
-    cmd.command.enable_steering = yaw_jump;
-    cmd.command.suppress_yaw_integral = !yaw_jump;
+    cmd.mode = controller::balance_drive_mode::BALANCE;
+    cmd.enable_steering = yaw_jump;
+    cmd.enable_yaw_integral = yaw_jump;
 
     float push_vel = 0.0f;
     uint32_t push_ramp_ms = 80;
@@ -41,7 +40,7 @@ static controller::balance_request update_jump_command(controller::action_state 
         state.jump.linear_cmd = 0.0f;
     }
 
-    cmd.target.linear_vel = state.jump.linear_cmd;
+    cmd.linear_vel = state.jump.linear_cmd;
     if(yaw_jump)
     {
         float err = controller::actions::angle_error(state.jump.target_yaw, ctx.status.yaw_angle);
@@ -58,11 +57,11 @@ static controller::balance_request update_jump_command(controller::action_state 
         }
 
         state.jump.yaw_cmd = constrain((float)state.jump.turn_dir * ff + kp * err, -max_rate, max_rate);
-        cmd.target.yaw_rate = state.jump.yaw_cmd;
+        cmd.yaw_rate = state.jump.yaw_cmd;
     }
 
-    if(state.jump.linear_dir == 0 || state.phase != controller::actions::PUSH){cmd.command.suppress_linear_feedback = true;}
-    if(!yaw_jump){cmd.command.suppress_yaw_feedback = true;}
+    if(state.jump.linear_dir == 0 || state.phase != controller::actions::PUSH){cmd.enable_linear_feedback = false;}
+    if(!yaw_jump){cmd.enable_yaw_feedback = false;}
     return cmd;
 }
 
@@ -85,7 +84,7 @@ controller::balance_request controller::actions::update_jump(controller::action_
             state.jump.target_yaw = controller::actions::wrap_pi(ctx.status.yaw_angle +
                                             (float)state.jump.turn_dir * PI * 0.5f);
             controller::actions::set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 450, 250);
-            cmd.command.reset_yaw_integral = true;
+            cmd.reset_yaw_integral = true;
             state.phase = controller::actions::PUSH;
             state.timer = 0;
             break;
@@ -134,7 +133,7 @@ controller::balance_request controller::actions::update_jump(controller::action_
 
             if(state.timer >= 80 || state.elapsed >= 350)
             {
-                cmd.command.reset_yaw_integral = true;
+                cmd.reset_yaw_integral = true;
                 controller::actions::begin_mode(state, controller::mode_id::BALANCE);
             }
             break;

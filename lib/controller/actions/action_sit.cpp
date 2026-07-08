@@ -30,12 +30,9 @@ static bool servo_middle_ready()
  */
 static void set_sit_direct_output(controller::balance_request &cmd)
 {
-    cmd.command.enable_balance = false;
-    cmd.command.enable_motor = true;
-    cmd.command.enable_steering = false;
-    cmd.command.direct_output = true;
-    cmd.target.direct_left = -0.05f;
-    cmd.target.direct_right = -0.05f;
+    cmd.mode = controller::balance_drive_mode::DIRECT_OUTPUT;
+    cmd.direct_left = -0.05f;
+    cmd.direct_right = -0.05f;
 }
 
 /**
@@ -83,18 +80,16 @@ static controller::balance_request update_sit_flow(controller::action_state &sta
     switch(state.phase)
     {
         case controller::actions::PREPARE:
-            cmd.command.enable_balance = true;
-            cmd.command.enable_motor = true;
-            cmd.command.enable_steering = true;
+            cmd.mode = controller::balance_drive_mode::BALANCE;
+            cmd.enable_steering = true;
             controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
             state.timer = 0;
             state.phase = controller::actions::INIT_PREPARE;
             break;
 
         case controller::actions::INIT_PREPARE:
-            cmd.command.enable_balance = true;
-            cmd.command.enable_motor = true;
-            cmd.command.enable_steering = true;
+            cmd.mode = controller::balance_drive_mode::BALANCE;
+            cmd.enable_steering = true;
             if(servo_middle_ready())
             {
                 state.timer = 0;
@@ -109,7 +104,7 @@ static controller::balance_request update_sit_flow(controller::action_state &sta
             if(fabsf(ctx.status.pitch_angle) >= 0.25f)
             {
                 state.timer = 0;
-                cmd.command.enable_motor = false;
+                cmd.mode = controller::balance_drive_mode::STOP;
                 state.phase = controller::actions::DONE;
                 break;
             }

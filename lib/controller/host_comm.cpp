@@ -219,8 +219,8 @@ static void send_status(uint32_t tick_ms)
     if((send_timer += tick_ms) < 20){return;}
     send_timer = 0;
 
-    balance_core::status_snapshot status;
-    if(!balance_core::get_status(status)){return;}
+    balance_core::debug_snapshot status;
+    if(!balance_core::get_debug_snapshot(status)){return;}
 
     uint32_t idx = 0;
     tx_buf[idx++] = 0xFF;
