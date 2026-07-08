@@ -158,7 +158,7 @@ balance_core::set_command(request.command);
    - 从 `mpu6050_dev::queue()` 读 IMU 快照。
    - 从 `motor::encoder_queue()` 读 encoder 快照。
    - 用 `servo_count_to_height()` 把舵机位置转换成腿长。
-3. `update_state()` 把 IMU 和 encoder 快照写入 `lqi::state`。
+3. `update_state()` 把 IMU 和 encoder 快照写入 `balance_core` 内部 LQI 状态。
 4. `update_gain()` 根据平均腿长更新 LQI feedback gain。
 5. 根据命令处理 reset：
    - `reset_reference` 清空线速度/yaw 参考和积分。

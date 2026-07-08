@@ -3,14 +3,101 @@
 #include "controller.h"
 #include "esp_timer.h"
 #include "freertos/task.h"
-#include "lqi.h"
 #include "motor.h"
 #include "mpu6050_dev.h"
 #include "sts3032.h"
 
-namespace lqi
+struct lqi_car_model
 {
-    void init();
+    float r = 0.0f;
+    float base_height = 0.0f;
+    float leg_max_height = 0.0f;
+    float leg_min_height = 0.0f;
+};
+
+struct lqi_speed_limit
+{
+    float max_linear_vel = 0.0f;
+    float max_steer_vel = 0.0f;
+};
+
+struct lqi_feedback_state
+{
+    float pitch_angle = 0.0f;
+    float pitch_rate = 0.0f;
+    float avg_linear_pos = 0.0f;
+    float avg_linear_vel = 0.0f;
+    float yaw_angle = 0.0f;
+    float yaw_rate = 0.0f;
+};
+
+struct lqi_reference_state
+{
+    float linear_vel = 0.0f;
+    float yaw_rate = 0.0f;
+};
+
+struct lqi_integral_state
+{
+    float linear_vel_error = 0.0f;
+    float yaw_rate_error = 0.0f;
+};
+
+struct lqi_integral_limit
+{
+    float linear_vel_error = 0.0f;
+    float yaw_rate_error = 0.0f;
+};
+
+struct lqi_runtime
+{
+    lqi_car_model car;
+    lqi_speed_limit limit;
+    lqi_feedback_state state;
+    lqi_reference_state ref;
+    lqi_integral_state integral;
+    lqi_integral_limit integral_clamp;
+    float feedback_gain[2][6]{};
+};
+
+static const float LQI_GAIN_POLY[12][4] =
+{
+    { -19.78318794f,  2.96741131f, -3.67412914f, -3.30769108f},
+    {  45.57101193f, -13.86222792f, -0.81410746f, -0.10765136f},
+    {  848.88274746f, -221.91446497f,  20.87630740f, -1.71800905f},
+    { -0.00000000f,  0.00000000f, -0.00000000f, -0.05583265f},
+    { -0.00000000f,  0.00000000f, -0.00000000f,  0.84459977f},
+    {  0.00000000f, -0.00000000f,  0.00000000f,  0.33502155f},
+    { -19.78318794f,  2.96741131f, -3.67412914f, -3.30769108f},
+    {  45.57101193f, -13.86222792f, -0.81410746f, -0.10765136f},
+    {  848.88274746f, -221.91446497f,  20.87630740f, -1.71800905f},
+    {  0.00000000f, -0.00000000f,  0.00000000f,  0.05583265f},
+    { -0.00000000f,  0.00000000f, -0.00000000f,  0.84459977f},
+    { -0.00000000f,  0.00000000f, -0.00000000f, -0.33502155f}
+};
+
+static lqi_runtime lqi_core;
+
+/**
+ * @brief 初始化 LQI 模型参数和运行状态
+ */
+static void init_lqi()
+{
+    lqi_core.car.r = 0.0526f / 2.0f;
+    lqi_core.car.base_height = 0.03f;
+    lqi_core.car.leg_max_height = 0.06f;
+    lqi_core.car.leg_min_height = 0.02f;
+
+    lqi_core.limit.max_linear_vel = 0.6f;
+    lqi_core.limit.max_steer_vel = 2.0f;
+
+    lqi_core.integral_clamp.linear_vel_error = 0.38f * 6.0f;
+    lqi_core.integral_clamp.yaw_rate_error = 0.55f;
+
+    memset(lqi_core.feedback_gain, 0, sizeof(lqi_core.feedback_gain));
+    memset(&lqi_core.state, 0, sizeof(lqi_core.state));
+    memset(&lqi_core.ref, 0, sizeof(lqi_core.ref));
+    memset(&lqi_core.integral, 0, sizeof(lqi_core.integral));
 }
 
 struct sensor_snapshot
@@ -18,7 +105,7 @@ struct sensor_snapshot
     bool imu_valid = false;
     bool encoder_valid = false;
     uint32_t timestamp_us = 0;
-    lqi::feedback_state feedback{};
+    lqi_feedback_state feedback{};
     float roll_angle = 0.0f;
     float leg_height[2]{};
     float avg_leg_height = 0.0f;
@@ -91,10 +178,10 @@ static void reset_reference()
     core.linear_release_timer = 0.0f;
     core.linear_release = false;
     core.lpf_yaw_target = 0.0f;
-    lqi::ref.linear_vel = 0.0f;
-    lqi::ref.yaw_rate = 0.0f;
-    lqi::integral.linear_vel_error = 0.0f;
-    lqi::integral.yaw_rate_error = 0.0f;
+    lqi_core.ref.linear_vel = 0.0f;
+    lqi_core.ref.yaw_rate = 0.0f;
+    lqi_core.integral.linear_vel_error = 0.0f;
+    lqi_core.integral.yaw_rate_error = 0.0f;
 }
 
 /**
@@ -125,17 +212,17 @@ static void update_gain(float height)
     float h3 = h2 * height;
     for(uint8_t i = 0; i < 6; i++)
     {
-        lqi::feedback_gain[0][i] =
-            lqi::gain_poly[i][0] * h3 +
-            lqi::gain_poly[i][1] * h2 +
-            lqi::gain_poly[i][2] * height +
-            lqi::gain_poly[i][3];
+        lqi_core.feedback_gain[0][i] =
+            LQI_GAIN_POLY[i][0] * h3 +
+            LQI_GAIN_POLY[i][1] * h2 +
+            LQI_GAIN_POLY[i][2] * height +
+            LQI_GAIN_POLY[i][3];
 
-        lqi::feedback_gain[1][i] =
-            lqi::gain_poly[i + 6][0] * h3 +
-            lqi::gain_poly[i + 6][1] * h2 +
-            lqi::gain_poly[i + 6][2] * height +
-            lqi::gain_poly[i + 6][3];
+        lqi_core.feedback_gain[1][i] =
+            LQI_GAIN_POLY[i + 6][0] * h3 +
+            LQI_GAIN_POLY[i + 6][1] * h2 +
+            LQI_GAIN_POLY[i + 6][2] * height +
+            LQI_GAIN_POLY[i + 6][3];
     }
 }
 
@@ -152,7 +239,7 @@ static void update_linear_reference(float dt)
     const float max_release_decel = 7.20f;
     const float release_duration = 0.45f;
     const float release_stop_speed = 0.035f;
-    const float dead_zone = lqi::limit.max_linear_vel * 0.05f;
+    const float dead_zone = lqi_core.limit.max_linear_vel * 0.05f;
 
     float target = core.motion.linear_vel;
     bool zero_cmd = fabsf(target) < dead_zone;
@@ -176,7 +263,7 @@ static void update_linear_reference(float dt)
     {
         target_ref = 0.0f;
         core.linear_release_timer += dt;
-        if(fabsf(lqi::state.avg_linear_vel) < release_stop_speed ||
+        if(fabsf(lqi_core.state.avg_linear_vel) < release_stop_speed ||
            core.linear_release_timer >= release_duration)
         {
             core.linear_release = false;
@@ -184,23 +271,23 @@ static void update_linear_reference(float dt)
         }
     }
 
-    float delta = target_ref - lqi::ref.linear_vel;
-    float rate = fabsf(target_ref) > fabsf(lqi::ref.linear_vel) ? max_accel : max_decel;
+    float delta = target_ref - lqi_core.ref.linear_vel;
+    float rate = fabsf(target_ref) > fabsf(lqi_core.ref.linear_vel) ? max_accel : max_decel;
     if(core.linear_release){rate = max_release_decel;}
 
     float max_step = rate * dt;
-    lqi::ref.linear_vel += constrain(delta, -max_step, max_step);
-    if(fabsf(target_ref) < dead_zone && fabsf(lqi::ref.linear_vel) < max_step)
+    lqi_core.ref.linear_vel += constrain(delta, -max_step, max_step);
+    if(fabsf(target_ref) < dead_zone && fabsf(lqi_core.ref.linear_vel) < max_step)
     {
-        lqi::ref.linear_vel = 0.0f;
+        lqi_core.ref.linear_vel = 0.0f;
     }
 
     if(!core.linear_release)
     {
-        integrate(lqi::integral.linear_vel_error,
-                  lqi::ref.linear_vel - lqi::state.avg_linear_vel,
+        integrate(lqi_core.integral.linear_vel_error,
+                  lqi_core.ref.linear_vel - lqi_core.state.avg_linear_vel,
                   dt,
-                  lqi::integral_clamp.linear_vel_error);
+                  lqi_core.integral_clamp.linear_vel_error);
     }
 
     core.last_linear_target = zero_cmd ? 0.0f : target;
@@ -216,25 +303,25 @@ static void update_yaw_reference(float dt)
     if(!core.motion.enable_steering)
     {
         core.lpf_yaw_target = 0.0f;
-        lqi::ref.yaw_rate = 0.0f;
-        lqi::integral.yaw_rate_error = 0.0f;
+        lqi_core.ref.yaw_rate = 0.0f;
+        lqi_core.integral.yaw_rate_error = 0.0f;
         return;
     }
 
     const float tau = 0.009f;
     core.lpf_yaw_target += (core.motion.yaw_rate - core.lpf_yaw_target) * (1.0f - expf(-dt / tau));
-    lqi::ref.yaw_rate = core.lpf_yaw_target;
+    lqi_core.ref.yaw_rate = core.lpf_yaw_target;
 
     if(!core.feedback.enable_yaw_integral)
     {
-        lqi::integral.yaw_rate_error = 0.0f;
+        lqi_core.integral.yaw_rate_error = 0.0f;
         return;
     }
 
-    integrate(lqi::integral.yaw_rate_error,
-              lqi::ref.yaw_rate - lqi::state.yaw_rate,
+    integrate(lqi_core.integral.yaw_rate_error,
+              lqi_core.ref.yaw_rate - lqi_core.state.yaw_rate,
               dt,
-              lqi::integral_clamp.yaw_rate_error);
+              lqi_core.integral_clamp.yaw_rate_error);
 }
 
 /**
@@ -276,9 +363,9 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     {
         sensor.encoder_valid = true;
         sensor.feedback.avg_linear_pos =
-            -(encoder.left_shaft_angle + encoder.right_shaft_angle) * lqi::car.r * 0.5f;
+            -(encoder.left_shaft_angle + encoder.right_shaft_angle) * lqi_core.car.r * 0.5f;
         sensor.feedback.avg_linear_vel =
-            -(encoder.left_shaft_velocity + encoder.right_shaft_velocity) * lqi::car.r * 0.5f;
+            -(encoder.left_shaft_velocity + encoder.right_shaft_velocity) * lqi_core.car.r * 0.5f;
     }
 
     return sensor;
@@ -293,15 +380,15 @@ static void update_state(const sensor_snapshot &sensor)
 {
     if(sensor.imu_valid)
     {
-        lqi::state.pitch_angle = sensor.feedback.pitch_angle;
-        lqi::state.pitch_rate = sensor.feedback.pitch_rate;
-        lqi::state.yaw_angle = sensor.feedback.yaw_angle;
-        lqi::state.yaw_rate = sensor.feedback.yaw_rate;
+        lqi_core.state.pitch_angle = sensor.feedback.pitch_angle;
+        lqi_core.state.pitch_rate = sensor.feedback.pitch_rate;
+        lqi_core.state.yaw_angle = sensor.feedback.yaw_angle;
+        lqi_core.state.yaw_rate = sensor.feedback.yaw_rate;
     }
     if(sensor.encoder_valid)
     {
-        lqi::state.avg_linear_pos = sensor.feedback.avg_linear_pos;
-        lqi::state.avg_linear_vel = core.vel_filter(sensor.feedback.avg_linear_vel);
+        lqi_core.state.avg_linear_pos = sensor.feedback.avg_linear_pos;
+        lqi_core.state.avg_linear_vel = core.vel_filter(sensor.feedback.avg_linear_vel);
     }
     if(core.first_state)
     {
@@ -369,12 +456,12 @@ static void solve_output()
 
     float x[6] =
     {
-        lqi::state.pitch_angle,
-        lqi::state.pitch_rate,
-        lqi::state.avg_linear_vel - lqi::ref.linear_vel,
-        lqi::state.yaw_rate - lqi::ref.yaw_rate,
-        lqi::integral.linear_vel_error,
-        lqi::integral.yaw_rate_error
+        lqi_core.state.pitch_angle,
+        lqi_core.state.pitch_rate,
+        lqi_core.state.avg_linear_vel - lqi_core.ref.linear_vel,
+        lqi_core.state.yaw_rate - lqi_core.ref.yaw_rate,
+        lqi_core.integral.linear_vel_error,
+        lqi_core.integral.yaw_rate_error
     };
 
     if(core.recover.enable)
@@ -398,7 +485,7 @@ static void solve_output()
         core.status.output[i] = 0.0f;
         for(uint8_t j = 0; j < 6; j++)
         {
-            core.status.output[i] += lqi::feedback_gain[i][j] * x[j];
+            core.status.output[i] += lqi_core.feedback_gain[i][j] * x[j];
         }
         core.status.output[i] *= core.recover.enable ? core.recover.output_blend : 1.0f;
     }
@@ -420,7 +507,7 @@ static void control_step(uint32_t tick_ms)
     update_gain(sensor.avg_leg_height);
 
     if(core.motion.reset_reference){reset_reference();}
-    if(core.motion.reset_yaw_integral){lqi::integral.yaw_rate_error = 0.0f;}
+    if(core.motion.reset_yaw_integral){lqi_core.integral.yaw_rate_error = 0.0f;}
 
     if(core.motion.enable_balance)
     {
@@ -429,14 +516,14 @@ static void control_step(uint32_t tick_ms)
     }
 
     core.status.timestamp_us = sensor.timestamp_us;
-    core.status.pitch_angle = lqi::state.pitch_angle;
-    core.status.pitch_rate = lqi::state.pitch_rate;
-    core.status.avg_linear_pos = lqi::state.avg_linear_pos;
-    core.status.avg_linear_vel = lqi::state.avg_linear_vel;
-    core.status.yaw_angle = lqi::state.yaw_angle;
-    core.status.yaw_rate = lqi::state.yaw_rate;
-    core.status.reference_linear_vel = lqi::ref.linear_vel;
-    core.status.reference_yaw_rate = lqi::ref.yaw_rate;
+    core.status.pitch_angle = lqi_core.state.pitch_angle;
+    core.status.pitch_rate = lqi_core.state.pitch_rate;
+    core.status.avg_linear_pos = lqi_core.state.avg_linear_pos;
+    core.status.avg_linear_vel = lqi_core.state.avg_linear_vel;
+    core.status.yaw_angle = lqi_core.state.yaw_angle;
+    core.status.yaw_rate = lqi_core.state.yaw_rate;
+    core.status.reference_linear_vel = lqi_core.ref.linear_vel;
+    core.status.reference_yaw_rate = lqi_core.ref.yaw_rate;
     core.status.input[0] = core.motion.linear_vel;
     core.status.input[1] = core.motion.yaw_rate;
     core.status.roll_angle = sensor.roll_angle;
@@ -552,8 +639,8 @@ bool balance_core::get_debug_snapshot(balance_core::debug_snapshot &out)
 balance_core::info balance_core::get_info()
 {
     balance_core::info info;
-    info.max_linear_vel = lqi::limit.max_linear_vel;
-    info.max_steer_vel = lqi::limit.max_steer_vel;
+    info.max_linear_vel = lqi_core.limit.max_linear_vel;
+    info.max_steer_vel = lqi_core.limit.max_steer_vel;
     return info;
 }
 
@@ -562,7 +649,7 @@ balance_core::info balance_core::get_info()
  */
 void balance_core::init()
 {
-    lqi::init();
+    init_lqi();
 
     status_queue = xQueueCreate(1, sizeof(core_status_snapshot));
 
