@@ -152,6 +152,7 @@ struct core_runtime
     float last_linear_target = 0.0f;
     float linear_release_timer = 0.0f;
     bool linear_release = false;
+    bool linear_release_hold = false;
     bool first_state = true;
     uint32_t servo_timer_ms = 0;
 };
@@ -183,6 +184,7 @@ static void reset_reference()
     core.last_linear_target = 0.0f;
     core.linear_release_timer = 0.0f;
     core.linear_release = false;
+    core.linear_release_hold = false;
     core.lpf_yaw_target = 0.0f;
     lqi_core.ref.linear_vel = 0.0f;
     lqi_core.ref.yaw_rate = 0.0f;
@@ -241,8 +243,9 @@ static void update_linear_reference(float dt)
 {
     const float tau = 0.024f;
     const float max_accel = 1.60f;
-    const float release_duration = 0.20f;
-    const float release_stop_speed = 0.035f;
+    const float release_duration = 0.30f;
+    const float release_hold_speed = 0.03f;
+    const float release_resume_speed = 0.02f;
 
     float target = core.motion.linear_vel;
     bool zero_cmd = target == 0.0f;
@@ -253,11 +256,13 @@ static void update_linear_reference(float dt)
     {
         core.linear_release = false;
         core.linear_release_timer = 0.0f;
+        core.linear_release_hold = false;
     }
     else if(had_cmd)
     {
         core.linear_release = true;
         core.linear_release_timer = 0.0f;
+        core.linear_release_hold = true;
         core.lpf_linear_target = 0.0f;
     }
 
@@ -267,8 +272,13 @@ static void update_linear_reference(float dt)
     {
         target_ref = 0.0f;
         core.linear_release_timer += dt;
+        if(core.linear_release_hold &&
+           fabsf(lqi_core.state.avg_linear_vel) <= release_hold_speed)
+        {
+            core.linear_release_hold = false;
+        }
         release_done =
-            fabsf(lqi_core.state.avg_linear_vel) < release_stop_speed ||
+            fabsf(lqi_core.state.avg_linear_vel) <= release_resume_speed ||
             core.linear_release_timer >= release_duration;
     }
 
@@ -286,16 +296,19 @@ static void update_linear_reference(float dt)
     float linear_error = lqi_core.ref.linear_vel - lqi_core.state.avg_linear_vel;
     if(core.linear_release)
     {
-        // 松手阶段只允许积分向零释放，避免积累成反向刹车积分。
-        float integral = lqi_core.integral.linear_vel_error;
-        float candidate = integral + linear_error * dt;
-        if(integral * candidate <= 0.0f)
+        // 高速阶段冻结积分，进入低速阶段后只允许积分向零释放。
+        if(!core.linear_release_hold)
         {
-            lqi_core.integral.linear_vel_error = 0.0f;
-        }
-        else if(fabsf(candidate) < fabsf(integral))
-        {
-            lqi_core.integral.linear_vel_error = candidate;
+            float integral = lqi_core.integral.linear_vel_error;
+            float candidate = integral + linear_error * dt;
+            if(integral * candidate <= 0.0f)
+            {
+                lqi_core.integral.linear_vel_error = 0.0f;
+            }
+            else if(fabsf(candidate) < fabsf(integral))
+            {
+                lqi_core.integral.linear_vel_error = candidate;
+            }
         }
     }
     else
@@ -310,6 +323,7 @@ static void update_linear_reference(float dt)
     {
         core.linear_release = false;
         core.linear_release_timer = 0.0f;
+        core.linear_release_hold = false;
     }
 
     core.last_linear_target = target;
