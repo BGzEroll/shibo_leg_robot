@@ -2,7 +2,6 @@
 
 #include "controller.h"
 #include "sts3032.h"
-#include "xbox.h"
 
 static constexpr int16_t SERVO_MIDDLE_COUNT = 2048;
 static constexpr int16_t SIT_MIDDLE_READY_ERROR = 50;
@@ -133,12 +132,12 @@ static controller::balance_request update_sit_flow(controller::action_state &sta
                     state.elapsed = 2;
                 }
             }
-            else if((state.timer += tick_ms) >= 10000 || (ctx.input.buttons & BTN_LS))
+            else if((state.timer += tick_ms) >= 10000 || ctx.input.disable_leg_torque)
             {
                 controller::actions::set_torque(0);
                 state.timer = 10000;
             }
-            if(ctx.input.buttons & BTN_RB)
+            if(ctx.input.exit_action)
             {
                 controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
                 controller::actions::reset_leg(ctx.leg);

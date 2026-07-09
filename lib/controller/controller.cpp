@@ -3,9 +3,8 @@
 #include "actions.h"
 #include "balance_core.h"
 #include "host_comm.h"
+#include "input_router.h"
 #include "ptk7350.h"
-#include "xbox.h"
-#include "xbox_dev.h"
 
 namespace host_comm
 {
@@ -19,7 +18,6 @@ static controller::leg_runtime leg;
 static controller::control_input input;
 static balance_core::motion_status status;
 static balance_core::info balance_info;
-static uint16_t last_buttons = 0;
 static float cam_angle = 90.0f;
 static float cam_speed = 0.0f;
 static int16_t cam_last_angle = -1;
@@ -84,64 +82,6 @@ static void apply_balance_request(const controller::balance_request &request)
 }
 
 /**
- * @brief 对输入值应用死区并重新归一化
- *
- * @param value 需要积分的值
- * @param deadband deadband
- *
- * @return 计算结果
- */
-static float apply_deadband(float value, float deadband)
-{
-    if(fabsf(value) <= deadband){return 0.0f;}
-    float mag = (fabsf(value) - deadband) / (1.0f - deadband);
-    return value > 0.0f ? mag : -mag;
-}
-
-/**
- * @brief 采样手柄或上位机遥控输入
- */
-static void sample_input()
-{
-    input = controller::control_input{};
-
-    if(xbox_dev::connected())
-    {
-        xbox_dev::data gamepad_data;
-        if(xbox_dev::queue() && xQueuePeek(xbox_dev::queue(), &gamepad_data, 0) == pdTRUE)
-        {
-            input.raw_buttons = gamepad_data.buttons;
-            memcpy(input.axes, gamepad_data.axes, sizeof(input.axes));
-        }
-    }
-    else
-    {
-        host_comm::remote_data remote;
-        if(host_comm::remote_queue() && xQueuePeek(host_comm::remote_queue(), &remote, 0) == pdTRUE)
-        {
-            input.raw_buttons = remote.buttons;
-            memcpy(input.axes, remote.axes, sizeof(input.axes));
-        }
-    }
-
-    input.buttons = input.raw_buttons;
-    if(input.buttons & BTN_SELECT)
-    {
-        input.buttons &= (uint16_t)~(BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT);
-    }
-
-    input.pressed_buttons = input.buttons & (uint16_t)(~last_buttons);
-    last_buttons = input.buttons;
-
-    float linear_axis = apply_deadband(input.axes[3], 0.05f);
-    float yaw_axis = apply_deadband(input.axes[0], 0.05f);
-
-    input.linear_cmd = linear_axis * balance_info.max_linear_vel;
-    if(linear_axis < 0.0f){input.linear_cmd *= 0.8f;}
-    input.yaw_cmd = -yaw_axis * balance_info.max_steer_vel;
-}
-
-/**
  * @brief 在可校准模式下取出舵机中位校准请求
  *
  * @return 有待处理请求时返回 true
@@ -166,16 +106,7 @@ static bool consume_middle_calibration_request()
  */
 static void update_camera(uint32_t tick_ms)
 {
-    bool modifier = (input.raw_buttons & BTN_SELECT) != 0;
-    bool up = (input.raw_buttons & BTN_UP) != 0;
-    bool down = (input.raw_buttons & BTN_DOWN) != 0;
-    float target_speed = 0.0f;
-
-    if(modifier)
-    {
-        if(up && !down){target_speed = 120.0f;}
-        if(down && !up){target_speed = -120.0f;}
-    }
+    float target_speed = (float)input.camera_direction * 120.0f;
 
     float dt = (float)tick_ms * 1.0e-3f;
     cam_speed += (target_speed - cam_speed) * (1.0f - expf(-dt / 0.05f));
@@ -236,7 +167,11 @@ bool controller::request_middle_calibration()
 void controller::update(uint32_t tick_ms)
 {
     balance_core::get_motion_status(status);
-    sample_input();
+    controller::input_router::update(
+        controller::actions_mode(action),
+        balance_info.max_linear_vel,
+        balance_info.max_steer_vel,
+        input);
     input.middle_calibration_request = consume_middle_calibration_request();
     update_camera(tick_ms);
 
@@ -255,5 +190,6 @@ void controller::init()
     balance_core::init();
     balance_info = balance_core::get_info();
     controller::actions_init(action);
+    controller::input_router::init();
     leg = controller::leg_runtime{};
 }

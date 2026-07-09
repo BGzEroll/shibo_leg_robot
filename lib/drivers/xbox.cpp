@@ -190,25 +190,25 @@ void xbox::parser_xbox_data()
         return;
     }
 
-    if(core.xboxNotif.btnA){buttons |= BTN_A;}
-    if(core.xboxNotif.btnB){buttons |= BTN_B;}
-    if(core.xboxNotif.btnX){buttons |= BTN_X;}
-    if(core.xboxNotif.btnY){buttons |= BTN_Y;}
+    if(core.xboxNotif.btnA){buttons |= xbox::BUTTON_A;}
+    if(core.xboxNotif.btnB){buttons |= xbox::BUTTON_B;}
+    if(core.xboxNotif.btnX){buttons |= xbox::BUTTON_X;}
+    if(core.xboxNotif.btnY){buttons |= xbox::BUTTON_Y;}
 
-    if(core.xboxNotif.btnLB){buttons |= BTN_LB;}
-    if(core.xboxNotif.btnRB){buttons |= BTN_RB;}
-    if(core.xboxNotif.btnLS){buttons |= BTN_LS;}
-    if(core.xboxNotif.btnRS){buttons |= BTN_RS;}
+    if(core.xboxNotif.btnLB){buttons |= xbox::BUTTON_LB;}
+    if(core.xboxNotif.btnRB){buttons |= xbox::BUTTON_RB;}
+    if(core.xboxNotif.btnLS){buttons |= xbox::BUTTON_LS;}
+    if(core.xboxNotif.btnRS){buttons |= xbox::BUTTON_RS;}
 
-    if(core.xboxNotif.btnShare){buttons |= BTN_SHARE;}
-    if(core.xboxNotif.btnStart){buttons |= BTN_START;}
-    if(core.xboxNotif.btnSelect){buttons |= BTN_SELECT;}
-    if(core.xboxNotif.btnXbox){buttons |= BTN_XBOX;}
+    if(core.xboxNotif.btnShare){buttons |= xbox::BUTTON_SHARE;}
+    if(core.xboxNotif.btnStart){buttons |= xbox::BUTTON_START;}
+    if(core.xboxNotif.btnSelect){buttons |= xbox::BUTTON_SELECT;}
+    if(core.xboxNotif.btnXbox){buttons |= xbox::BUTTON_XBOX;}
 
-    if(core.xboxNotif.btnDirUp){buttons |= BTN_UP;}
-    if(core.xboxNotif.btnDirLeft){buttons |= BTN_LEFT;}
-    if(core.xboxNotif.btnDirRight){buttons |= BTN_RIGHT;}
-    if(core.xboxNotif.btnDirDown){buttons |= BTN_DOWN;}
+    if(core.xboxNotif.btnDirUp){buttons |= xbox::BUTTON_UP;}
+    if(core.xboxNotif.btnDirLeft){buttons |= xbox::BUTTON_LEFT;}
+    if(core.xboxNotif.btnDirRight){buttons |= xbox::BUTTON_RIGHT;}
+    if(core.xboxNotif.btnDirDown){buttons |= xbox::BUTTON_DOWN;}
 
     // 摇杆归一化到 [-1.0, 1.0]，扳机归一化到 [0.0, 1.0]
     axes[0] = (float)((int32_t)core.xboxNotif.joyLHori - 32768) / 32768.0f;

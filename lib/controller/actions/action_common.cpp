@@ -1,7 +1,6 @@
 #include "action_common.h"
 
 #include "sts3032.h"
-#include "xbox.h"
 
 static constexpr float LEG_HEIGHT_BASE_MIN = -10.0f;
 static constexpr float LEG_HEIGHT_BASE_MAX = 52.0f;
@@ -83,10 +82,8 @@ void controller::actions::reset_leg(leg_runtime &leg)
  */
 void controller::actions::run_leg_control(action_io &ctx, float height_count_offset)
 {
-    if((ctx.input.buttons & BTN_RIGHT) && !(ctx.input.buttons & ~BTN_RIGHT)){ctx.leg.roll_adjust += 0.025f;}
-    if((ctx.input.buttons & BTN_LEFT) && !(ctx.input.buttons & ~BTN_LEFT)){ctx.leg.roll_adjust -= 0.025f;}
-    if((ctx.input.buttons & BTN_UP) && !(ctx.input.buttons & ~BTN_UP)){ctx.leg.height_base -= 0.025f;}
-    if((ctx.input.buttons & BTN_DOWN) && !(ctx.input.buttons & ~BTN_DOWN)){ctx.leg.height_base += 0.025f;}
+    ctx.leg.roll_adjust += (float)ctx.input.roll_direction * 0.025f;
+    ctx.leg.height_base += (float)ctx.input.leg_height_direction * 0.025f;
     ctx.leg.height_base = constrain(ctx.leg.height_base, LEG_HEIGHT_BASE_MIN, LEG_HEIGHT_BASE_MAX);
 
     float roll_angle = ctx.leg.roll_lpf(ctx.status.roll_angle / (float)PI * 180.0f);

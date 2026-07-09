@@ -3,7 +3,6 @@
 #include "action_common.h"
 #include "host_comm.h"
 #include "ptk7350.h"
-#include "xbox.h"
 
 static constexpr float CAM_INITIAL_ANGLE = 45.0f;
 static constexpr float CAM_LOST_ANGLE = 45.0f;
@@ -70,7 +69,7 @@ static void set_frontier(controller::action_state &state, uint16_t angle)
  *
  * @return 生成的平衡请求
  */
-static controller::balance_request base_command(controller::action_io &ctx)
+controller::balance_request controller::actions::kick_base_command(controller::action_io &ctx)
 {
     controller::balance_request cmd;
     cmd.mode = controller::balance_drive_mode::BALANCE;
@@ -283,7 +282,7 @@ static void update_kick_cooldown(controller::action_state &state, uint32_t tick_
  *
  * @param state 动作状态机状态
  */
-static void start_kick_exit(controller::action_state &state)
+void controller::actions::begin_kick_exit(controller::action_state &state)
 {
     set_frontier(state, FRONTIER_KICK_ANGLE);
     state.kick.kicking = false;
@@ -313,35 +312,6 @@ static bool update_kick_exit(controller::action_state &state, controller::action
 }
 
 /**
- * @brief 处理两个踢球模式之间的按键切换
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param current_mode 当前踢球模式
- *
- * @return 已切换模式时返回 true
- */
-static bool switch_kick_mode(controller::action_state &state, const controller::action_io &ctx,
-    controller::mode_id current_mode)
-{
-    if(!(ctx.input.buttons & BTN_SELECT)){return false;}
-
-    if(current_mode != controller::mode_id::KICK_PLACE && (ctx.input.pressed_buttons & BTN_X))
-    {
-        controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
-        return true;
-    }
-
-    if(current_mode != controller::mode_id::KICK_RUN && (ctx.input.pressed_buttons & BTN_Y))
-    {
-        controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
-        return true;
-    }
-
-    return false;
-}
-
-/**
  * @brief 初始化踢球模式状态
  *
  * @param state 动作状态机状态
@@ -368,14 +338,8 @@ static void prepare_kick(controller::action_state &state, controller::action_io 
  */
 controller::balance_request controller::actions::update_kick_place(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    controller::balance_request cmd = base_command(ctx);
-    if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
-    {
-        start_kick_exit(state);
-        return cmd;
-    }
+    controller::balance_request cmd = controller::actions::kick_base_command(ctx);
     if(update_kick_exit(state, ctx, tick_ms)){return cmd;}
-    if(switch_kick_mode(state, ctx, controller::mode_id::KICK_PLACE)){return cmd;}
 
     if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     update_kick_hold(state, tick_ms);
@@ -414,14 +378,8 @@ controller::balance_request controller::actions::update_kick_place(controller::a
  */
 controller::balance_request controller::actions::update_kick_run(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    controller::balance_request cmd = base_command(ctx);
-    if((ctx.input.buttons & BTN_SELECT) && (ctx.input.pressed_buttons & BTN_B))
-    {
-        start_kick_exit(state);
-        return cmd;
-    }
+    controller::balance_request cmd = controller::actions::kick_base_command(ctx);
     if(update_kick_exit(state, ctx, tick_ms)){return cmd;}
-    if(switch_kick_mode(state, ctx, controller::mode_id::KICK_RUN)){return cmd;}
 
     if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
     update_kick_cooldown(state, tick_ms);

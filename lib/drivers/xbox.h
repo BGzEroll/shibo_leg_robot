@@ -4,25 +4,26 @@
 #include <Arduino.h>
 #include "XboxSeriesXControllerESP32_asukiaaa.hpp"
 
-#define BTN_A           0x0001
-#define BTN_B           0x0002
-#define BTN_X           0x0004
-#define BTN_Y           0x0008
-#define BTN_SHARE       0x0010
-#define BTN_START       0x0020
-#define BTN_SELECT      0x0040
-#define BTN_XBOX        0x0080
-#define BTN_LB          0x0100
-#define BTN_RB          0x0200
-#define BTN_LS          0x0400
-#define BTN_RS          0x0800
-#define BTN_UP          0x1000
-#define BTN_LEFT        0x2000
-#define BTN_RIGHT       0x4000
-#define BTN_DOWN        0x8000
-
 class xbox
 {
+    public:
+        static constexpr uint16_t BUTTON_A = 0x0001;
+        static constexpr uint16_t BUTTON_B = 0x0002;
+        static constexpr uint16_t BUTTON_X = 0x0004;
+        static constexpr uint16_t BUTTON_Y = 0x0008;
+        static constexpr uint16_t BUTTON_SHARE = 0x0010;
+        static constexpr uint16_t BUTTON_START = 0x0020;
+        static constexpr uint16_t BUTTON_SELECT = 0x0040;
+        static constexpr uint16_t BUTTON_XBOX = 0x0080;
+        static constexpr uint16_t BUTTON_LB = 0x0100;
+        static constexpr uint16_t BUTTON_RB = 0x0200;
+        static constexpr uint16_t BUTTON_LS = 0x0400;
+        static constexpr uint16_t BUTTON_RS = 0x0800;
+        static constexpr uint16_t BUTTON_UP = 0x1000;
+        static constexpr uint16_t BUTTON_LEFT = 0x2000;
+        static constexpr uint16_t BUTTON_RIGHT = 0x4000;
+        static constexpr uint16_t BUTTON_DOWN = 0x8000;
+
     public:
         xbox(const char *mac);
         ~xbox();

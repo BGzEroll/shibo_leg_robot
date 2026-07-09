@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "SimpleFOC.h"
 #include "balance_core.h"
+#include "control_input.h"
 #include "sts3032.h"
 
 namespace controller
@@ -35,17 +36,6 @@ namespace controller
         BALANCE,
         DIRECT_OUTPUT,
         RECOVER
-    };
-
-    struct control_input
-    {
-        uint16_t raw_buttons = 0;
-        uint16_t buttons = 0;
-        uint16_t pressed_buttons = 0;
-        float axes[6]{};
-        float linear_cmd = 0.0f;
-        float yaw_cmd = 0.0f;
-        bool middle_calibration_request = false;
     };
 
     struct leg_runtime

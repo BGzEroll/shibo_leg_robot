@@ -4,7 +4,6 @@
 #include "actions/action_jump.h"
 #include "actions/action_kick.h"
 #include "actions/action_sit.h"
-#include "xbox.h"
 
 /* ---- 动作模式切换 ---- */
 
@@ -55,7 +54,10 @@ static controller::balance_request update_boot(controller::action_state &state, 
             break;
 
         case controller::actions::WAIT_SIGNAL:
-            if(ctx.input.buttons & BTN_RB){state.phase = controller::actions::INIT;}
+            if(ctx.input.request == controller::action_request::BOOT_CONFIRM)
+            {
+                state.phase = controller::actions::INIT;
+            }
             break;
 
         case controller::actions::INIT:
@@ -102,42 +104,68 @@ static controller::balance_request update_balance(controller::action_state &stat
     cmd.yaw_rate = ctx.input.yaw_cmd;
     controller::actions::run_leg_control(ctx);
 
-    if((ctx.input.pressed_buttons & BTN_LS) &&
-       fabsf(ctx.input.linear_cmd) < ctx.max_linear_vel * 0.05f)
+    if(ctx.input.reset_leg)
     {
         controller::actions::reset_leg(ctx.leg);
     }
 
-    if(ctx.input.middle_calibration_request)
-    {
-        controller::actions::begin_mode(state, controller::mode_id::MIDDLE_CALIBRATION);
-        return cmd;
-    }
-
-    bool modifier = (ctx.input.buttons & BTN_SELECT) != 0;
-    if(modifier && (ctx.input.pressed_buttons & BTN_X))
-    {
-        controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
-        return cmd;
-    }
-    if(modifier && (ctx.input.pressed_buttons & BTN_Y))
-    {
-        controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
-        return cmd;
-    }
-    if(modifier && (ctx.input.pressed_buttons & BTN_B))
-    {
-        controller::actions::begin_mode(state, controller::mode_id::BALANCE);
-        return cmd;
-    }
-
-    if(ctx.input.pressed_buttons & BTN_LB){controller::actions::begin_mode(state, controller::mode_id::SIT);}
-    if(ctx.input.pressed_buttons & BTN_RS){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::IN_PLACE);}
-    if(ctx.input.pressed_buttons & BTN_Y){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::FORWARD);}
-    if(ctx.input.pressed_buttons & BTN_A){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::BACKWARD);}
-    if(ctx.input.pressed_buttons & BTN_X){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::TURN_LEFT);}
-    if(ctx.input.pressed_buttons & BTN_B){controller::actions::begin_mode(state, controller::mode_id::JUMP, controller::jump_command::TURN_RIGHT);}
     return cmd;
+}
+
+/**
+ * @brief 应用 BALANCE 模式产生的动作切换请求
+ *
+ * @param state 动作状态机状态
+ * @param request 动作切换请求
+ */
+static void route_balance_request(controller::action_state &state, controller::action_request request)
+{
+    switch(request)
+    {
+        case controller::action_request::RESET_BALANCE:
+            controller::actions::begin_mode(state, controller::mode_id::BALANCE);
+            break;
+
+        case controller::action_request::SIT:
+            controller::actions::begin_mode(state, controller::mode_id::SIT);
+            break;
+
+        case controller::action_request::JUMP_IN_PLACE:
+            controller::actions::begin_mode(
+                state, controller::mode_id::JUMP, controller::jump_command::IN_PLACE);
+            break;
+
+        case controller::action_request::JUMP_FORWARD:
+            controller::actions::begin_mode(
+                state, controller::mode_id::JUMP, controller::jump_command::FORWARD);
+            break;
+
+        case controller::action_request::JUMP_BACKWARD:
+            controller::actions::begin_mode(
+                state, controller::mode_id::JUMP, controller::jump_command::BACKWARD);
+            break;
+
+        case controller::action_request::JUMP_LEFT:
+            controller::actions::begin_mode(
+                state, controller::mode_id::JUMP, controller::jump_command::TURN_LEFT);
+            break;
+
+        case controller::action_request::JUMP_RIGHT:
+            controller::actions::begin_mode(
+                state, controller::mode_id::JUMP, controller::jump_command::TURN_RIGHT);
+            break;
+
+        case controller::action_request::KICK_PLACE:
+            controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
+            break;
+
+        case controller::action_request::KICK_RUN:
+            controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
+            break;
+
+        default:
+            break;
+    }
 }
 
 /* ---- 动作调度 API ---- */
@@ -175,7 +203,8 @@ controller::mode_id controller::actions_mode(const controller::action_state &sta
  */
 controller::balance_request controller::actions_update(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
-    if(state.mode != controller::mode_id::STOP && (ctx.input.pressed_buttons & BTN_START))
+    if(state.mode != controller::mode_id::STOP &&
+       ctx.input.request == controller::action_request::STOP)
     {
         controller::actions::begin_mode(state, controller::mode_id::STOP);
         return controller::balance_request{};
@@ -187,7 +216,16 @@ controller::balance_request controller::actions_update(controller::action_state 
             return update_boot(state, ctx, tick_ms);
 
         case controller::mode_id::BALANCE:
-            return update_balance(state, ctx);
+        {
+            controller::balance_request cmd = update_balance(state, ctx);
+            if(ctx.input.middle_calibration_request)
+            {
+                controller::actions::begin_mode(state, controller::mode_id::MIDDLE_CALIBRATION);
+                return cmd;
+            }
+            route_balance_request(state, ctx.input.request);
+            return cmd;
+        }
 
         case controller::mode_id::SIT:
             return controller::actions::update_sit(state, ctx, tick_ms);
@@ -196,16 +234,42 @@ controller::balance_request controller::actions_update(controller::action_state 
             return controller::actions::update_jump(state, ctx, tick_ms);
 
         case controller::mode_id::KICK_PLACE:
+            if(ctx.input.request == controller::action_request::KICK_EXIT)
+            {
+                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
+                controller::actions::begin_kick_exit(state);
+                return cmd;
+            }
+            if(state.phase != controller::actions::EXIT_PREPARE &&
+               ctx.input.request == controller::action_request::KICK_RUN)
+            {
+                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
+                controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
+                return cmd;
+            }
             return controller::actions::update_kick_place(state, ctx, tick_ms);
 
         case controller::mode_id::KICK_RUN:
+            if(ctx.input.request == controller::action_request::KICK_EXIT)
+            {
+                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
+                controller::actions::begin_kick_exit(state);
+                return cmd;
+            }
+            if(state.phase != controller::actions::EXIT_PREPARE &&
+               ctx.input.request == controller::action_request::KICK_PLACE)
+            {
+                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
+                controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
+                return cmd;
+            }
             return controller::actions::update_kick_run(state, ctx, tick_ms);
 
         case controller::mode_id::MIDDLE_CALIBRATION:
             return controller::actions::update_middle_calibration(state, ctx, tick_ms);
 
         case controller::mode_id::STOP:
-            if(ctx.input.buttons & BTN_RB)
+            if(ctx.input.request == controller::action_request::BOOT)
             {
                 controller::actions::begin_mode(state, controller::mode_id::BOOT);
             }
