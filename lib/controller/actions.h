@@ -74,6 +74,7 @@ namespace controller
         leg_runtime &leg;
         float max_linear_vel;
         float max_steer_vel;
+        bool battery_low;
     };
 
     struct jump_runtime
@@ -114,6 +115,7 @@ namespace controller
         uint32_t elapsed = 0;
         jump_runtime jump;
         kick_runtime kick;
+        bool sit_exit_locked = false;
     };
 
     void actions_init(action_state &state);

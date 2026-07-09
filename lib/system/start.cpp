@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include "freertos/task.h"
+#include "battery.h"
 #include "balance_core.h"
 #include "controller.h"
 #include "host_comm.h"
@@ -14,6 +15,7 @@
  */
 static void task_list()
 {
+    xTaskCreatePinnedToCore(battery::task_entry, "battery_task", 2048, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(led_dev::task_entry, "led_dev_task", 1024, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(xbox_dev::task_entry, "xbox_dev_task", 4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(balance_core::core_task_entry, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
@@ -29,6 +31,7 @@ void start_init_all()
 {
     delay(1000);
 
+    battery::init();
     led_dev::init();
     xbox_dev::init();
     esp_http_server::init();

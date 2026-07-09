@@ -168,6 +168,23 @@ static void route_balance_request(controller::action_state &state, controller::a
     }
 }
 
+/**
+ * @brief 在低电坐下流程中锁定起身路径
+ *
+ * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
+ */
+static void update_sit_exit_lock(controller::action_state &state, const controller::action_io &ctx)
+{
+    bool sit_mode =
+        state.mode == controller::mode_id::SIT ||
+        state.mode == controller::mode_id::MIDDLE_CALIBRATION;
+    if(sit_mode && ctx.battery_low)
+    {
+        state.sit_exit_locked = true;
+    }
+}
+
 /* ---- 动作调度 API ---- */
 
 /**
@@ -177,6 +194,7 @@ static void route_balance_request(controller::action_state &state, controller::a
  */
 void controller::actions_init(controller::action_state &state)
 {
+    state.sit_exit_locked = false;
     controller::actions::begin_mode(state, controller::mode_id::BOOT);
 }
 
@@ -203,6 +221,8 @@ controller::mode_id controller::actions_mode(const controller::action_state &sta
  */
 controller::balance_request controller::actions_update(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
 {
+    update_sit_exit_lock(state, ctx);
+
     if(state.mode != controller::mode_id::STOP &&
        ctx.input.request == controller::action_request::STOP)
     {
@@ -269,7 +289,8 @@ controller::balance_request controller::actions_update(controller::action_state 
             return controller::actions::update_middle_calibration(state, ctx, tick_ms);
 
         case controller::mode_id::STOP:
-            if(ctx.input.request == controller::action_request::BOOT)
+            if(ctx.input.request == controller::action_request::BOOT &&
+               !state.sit_exit_locked)
             {
                 controller::actions::begin_mode(state, controller::mode_id::BOOT);
             }

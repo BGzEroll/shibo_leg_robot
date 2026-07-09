@@ -1,6 +1,7 @@
 #include "controller.h"
 
 #include "actions.h"
+#include "battery.h"
 #include "balance_core.h"
 #include "host_comm.h"
 #include "input_router.h"
@@ -119,6 +120,22 @@ static void update_camera(uint32_t tick_ms)
     }
 }
 
+/**
+ * @brief 查询最新有效电池状态是否为低电
+ *
+ * @return 电池状态有效且低电时返回 true
+ */
+static bool battery_low()
+{
+    battery::data data;
+    if(!battery::queue() ||
+       xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
+    {
+        return false;
+    }
+    return data.valid && data.low;
+}
+
 /* ---- controller 公共 API ---- */
 
 /**
@@ -175,7 +192,14 @@ void controller::update(uint32_t tick_ms)
     input.middle_calibration_request = consume_middle_calibration_request();
     update_camera(tick_ms);
 
-    controller::action_io ctx{input, status, leg, balance_info.max_linear_vel, balance_info.max_steer_vel};
+    controller::action_io ctx{
+        input,
+        status,
+        leg,
+        balance_info.max_linear_vel,
+        balance_info.max_steer_vel,
+        battery_low()
+    };
     controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
 
     apply_balance_request(request);

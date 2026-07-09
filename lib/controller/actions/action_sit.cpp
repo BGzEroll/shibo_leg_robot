@@ -137,7 +137,7 @@ static controller::balance_request update_sit_flow(controller::action_state &sta
                 controller::actions::set_torque(0);
                 state.timer = 10000;
             }
-            if(ctx.input.exit_action)
+            if(ctx.input.exit_action && !state.sit_exit_locked)
             {
                 controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
                 controller::actions::reset_leg(ctx.leg);
