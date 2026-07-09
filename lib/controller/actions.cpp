@@ -54,7 +54,9 @@ static controller::balance_request update_boot(controller::action_state &state, 
             break;
 
         case controller::actions::WAIT_SIGNAL:
-            if(ctx.input.request == controller::action_request::BOOT_CONFIRM)
+            if(ctx.input.request == controller::action_request::BOOT_CONFIRM &&
+               ctx.battery_valid &&
+               !ctx.battery_low)
             {
                 state.phase = controller::actions::INIT;
             }

@@ -74,6 +74,7 @@ namespace controller
         leg_runtime &leg;
         float max_linear_vel;
         float max_steer_vel;
+        bool battery_valid;
         bool battery_low;
     };
 

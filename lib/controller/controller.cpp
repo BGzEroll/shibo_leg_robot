@@ -121,19 +121,19 @@ static void update_camera(uint32_t tick_ms)
 }
 
 /**
- * @brief 查询最新有效电池状态是否为低电
+ * @brief 读取最新电池状态
  *
- * @return 电池状态有效且低电时返回 true
+ * @return 最新电池状态，队列不可用时返回无效状态
  */
-static bool battery_low()
+static battery::data read_battery()
 {
     battery::data data;
     if(!battery::queue() ||
        xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
     {
-        return false;
+        return battery::data{};
     }
-    return data.valid && data.low;
+    return data;
 }
 
 /* ---- controller 公共 API ---- */
@@ -192,13 +192,15 @@ void controller::update(uint32_t tick_ms)
     input.middle_calibration_request = consume_middle_calibration_request();
     update_camera(tick_ms);
 
+    battery::data battery_data = read_battery();
     controller::action_io ctx{
         input,
         status,
         leg,
         balance_info.max_linear_vel,
         balance_info.max_steer_vel,
-        battery_low()
+        battery_data.valid,
+        battery_data.low
     };
     controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
 

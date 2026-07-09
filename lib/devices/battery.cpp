@@ -15,6 +15,7 @@ static constexpr float LOW_VOLTAGE = 7.4f;
 static constexpr float RECOVER_VOLTAGE = 7.5f;
 static constexpr uint8_t ADC_SAMPLE_COUNT = 16;
 static constexpr uint8_t LOW_CONFIRM_COUNT = 5;
+static constexpr uint8_t NORMAL_CONFIRM_COUNT = 5;
 static constexpr uint8_t RECOVER_CONFIRM_COUNT = 10;
 static constexpr uint32_t SAMPLE_PERIOD_MS = 100;
 
@@ -22,6 +23,7 @@ static QueueHandle_t battery_queue = nullptr;
 static esp_adc_cal_characteristics_t adc_characteristics;
 static battery::data current_data;
 static uint8_t low_confirm_count = 0;
+static uint8_t normal_confirm_count = 0;
 static uint8_t recover_confirm_count = 0;
 
 /* ---- 电池采样与状态判定 ---- */
@@ -52,6 +54,33 @@ static float read_voltage()
  */
 static void update_low_state(float voltage)
 {
+    if(!current_data.valid)
+    {
+        if(voltage < LOW_VOLTAGE)
+        {
+            normal_confirm_count = 0;
+            if(low_confirm_count < LOW_CONFIRM_COUNT){low_confirm_count++;}
+            if(low_confirm_count >= LOW_CONFIRM_COUNT)
+            {
+                current_data.low = true;
+                current_data.valid = true;
+                low_confirm_count = 0;
+            }
+        }
+        else
+        {
+            low_confirm_count = 0;
+            if(normal_confirm_count < NORMAL_CONFIRM_COUNT){normal_confirm_count++;}
+            if(normal_confirm_count >= NORMAL_CONFIRM_COUNT)
+            {
+                current_data.low = false;
+                current_data.valid = true;
+                normal_confirm_count = 0;
+            }
+        }
+        return;
+    }
+
     if(voltage < LOW_VOLTAGE)
     {
         recover_confirm_count = 0;
@@ -91,7 +120,6 @@ static void update_status()
 {
     current_data.timestamp_ms = millis();
     current_data.voltage = read_voltage();
-    current_data.valid = true;
     update_low_state(current_data.voltage);
 
     if(battery_queue)
