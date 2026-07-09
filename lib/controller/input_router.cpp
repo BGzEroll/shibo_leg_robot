@@ -2,6 +2,7 @@
 
 #include "actions.h"
 #include "esp_timer.h"
+#include "esp_http_server.h"
 #include "host_comm.h"
 #include "xbox.h"
 #include "xbox_dev.h"
@@ -43,6 +44,20 @@ static float apply_deadband(float value, float deadband)
 }
 
 /**
+ * @brief 判断输入时间戳是否仍在有效期内
+ *
+ * @param timestamp_us 输入时间戳
+ * @param now_us 当前时间戳
+ *
+ * @return 输入仍然新鲜时返回 true
+ */
+static bool input_fresh(uint32_t timestamp_us, uint32_t now_us)
+{
+    return timestamp_us != 0 &&
+           (uint32_t)(now_us - timestamp_us) <= INPUT_TIMEOUT_US;
+}
+
+/**
  * @brief 读取当前优先输入源的最新快照
  *
  * @return 输入快照
@@ -50,6 +65,7 @@ static float apply_deadband(float value, float deadband)
 static input_snapshot read_snapshot()
 {
     input_snapshot snapshot;
+    uint32_t now_us = (uint32_t)esp_timer_get_time();
 
     if(xbox_dev::connected())
     {
@@ -65,8 +81,21 @@ static input_snapshot read_snapshot()
     }
     else
     {
-        snapshot.source = controller::input_source::HOST;
+        esp_http_server::remote_input_data web_data;
+        QueueHandle_t remote_queue = esp_http_server::remote_queue();
+        if(remote_queue &&
+           xQueuePeek(remote_queue, &web_data, 0) == pdTRUE &&
+           input_fresh(web_data.timestamp_us, now_us))
+        {
+            snapshot.source = controller::input_source::WEB;
+            snapshot.timestamp_us = web_data.timestamp_us;
+            snapshot.buttons = web_data.buttons;
+            memcpy(snapshot.axes, web_data.axes, sizeof(snapshot.axes));
+            snapshot.fresh = true;
+            return snapshot;
+        }
 
+        snapshot.source = controller::input_source::HOST;
         host_comm::remote_data data;
         if(host_comm::remote_queue() && xQueuePeek(host_comm::remote_queue(), &data, 0) == pdTRUE)
         {
@@ -76,10 +105,7 @@ static input_snapshot read_snapshot()
         }
     }
 
-    uint32_t now_us = (uint32_t)esp_timer_get_time();
-    snapshot.fresh =
-        snapshot.timestamp_us != 0 &&
-        (uint32_t)(now_us - snapshot.timestamp_us) <= INPUT_TIMEOUT_US;
+    snapshot.fresh = input_fresh(snapshot.timestamp_us, now_us);
     if(!snapshot.fresh)
     {
         snapshot.buttons = 0;

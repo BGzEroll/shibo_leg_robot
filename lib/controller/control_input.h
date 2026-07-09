@@ -9,6 +9,7 @@ namespace controller
     {
         NONE = 0,
         XBOX,
+        WEB,
         HOST
     };
 
