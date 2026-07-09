@@ -262,16 +262,14 @@ static void update_linear_reference(float dt)
     }
 
     float target_ref = core.lpf_linear_target;
+    bool release_done = false;
     if(core.linear_release)
     {
         target_ref = 0.0f;
         core.linear_release_timer += dt;
-        if(fabsf(lqi_core.state.avg_linear_vel) < release_stop_speed ||
-           core.linear_release_timer >= release_duration)
-        {
-            core.linear_release = false;
-            core.linear_release_timer = 0.0f;
-        }
+        release_done =
+            fabsf(lqi_core.state.avg_linear_vel) < release_stop_speed ||
+            core.linear_release_timer >= release_duration;
     }
 
     if(fabsf(target_ref) > fabsf(lqi_core.ref.linear_vel))
@@ -285,12 +283,33 @@ static void update_linear_reference(float dt)
         lqi_core.ref.linear_vel = target_ref;
     }
 
-    if(!core.linear_release)
+    float linear_error = lqi_core.ref.linear_vel - lqi_core.state.avg_linear_vel;
+    if(core.linear_release)
+    {
+        // 松手阶段只允许积分向零释放，避免积累成反向刹车积分。
+        float integral = lqi_core.integral.linear_vel_error;
+        float candidate = integral + linear_error * dt;
+        if(integral * candidate <= 0.0f)
+        {
+            lqi_core.integral.linear_vel_error = 0.0f;
+        }
+        else if(fabsf(candidate) < fabsf(integral))
+        {
+            lqi_core.integral.linear_vel_error = candidate;
+        }
+    }
+    else
     {
         integrate(lqi_core.integral.linear_vel_error,
-                  lqi_core.ref.linear_vel - lqi_core.state.avg_linear_vel,
+                  linear_error,
                   dt,
                   lqi_core.integral_clamp.linear_vel_error);
+    }
+
+    if(release_done)
+    {
+        core.linear_release = false;
+        core.linear_release_timer = 0.0f;
     }
 
     core.last_linear_target = target;
