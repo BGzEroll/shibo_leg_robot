@@ -7,6 +7,7 @@
 #include "controller.h"
 #include "host_comm.h"
 #include "led_dev.h"
+#include "rgb_dev.h"
 #include "xbox_dev.h"
 #include "esp_http_server.h"
 
@@ -17,6 +18,7 @@ static void task_list()
 {
     xTaskCreatePinnedToCore(battery::task_entry, "battery_task", 2048, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(led_dev::task_entry, "led_dev_task", 1024, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(rgb_dev::task_entry, "rgb_dev_task", 2048, nullptr, 2, nullptr, 0);
     xTaskCreatePinnedToCore(xbox_dev::task_entry, "xbox_dev_task", 4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(balance_core::core_task_entry, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(balance_core::control_task_entry, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
@@ -33,6 +35,7 @@ void start_init_all()
 
     battery::init();
     led_dev::init();
+    rgb_dev::init();
     xbox_dev::init();
     esp_http_server::init();
     controller::init();
