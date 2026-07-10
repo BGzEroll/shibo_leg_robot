@@ -21,6 +21,7 @@ namespace controller
         BOOT_CONFIRM,
         RESET_BALANCE,
         SIT,
+        MIDDLE_CALIBRATION,
         JUMP_IN_PLACE,
         JUMP_FORWARD,
         JUMP_BACKWARD,
@@ -28,7 +29,9 @@ namespace controller
         JUMP_RIGHT,
         KICK_PLACE,
         KICK_RUN,
-        KICK_EXIT
+        KICK_EXIT,
+        EXIT_ACTION,
+        ACTION_DONE
     };
 
     struct control_input

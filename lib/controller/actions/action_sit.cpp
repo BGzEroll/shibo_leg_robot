@@ -9,6 +9,8 @@ static constexpr uint32_t MIDDLE_CALIBRATION_TORQUE_OFF_MS = 500;
 static constexpr uint32_t MIDDLE_CALIBRATION_RUN_MS = 2000;
 static constexpr uint32_t MIDDLE_CALIBRATION_SUCCESS_MS = 2500;
 
+static controller::actions::action_runtime sit_runtime;
+
 /* ---- 坐下与校准内部流程 ---- */
 
 /**
@@ -52,151 +54,191 @@ static bool sit_phase_can_enter_middle_calibration(uint8_t phase)
 }
 
 /**
- * @brief 将坐下流程切换为中位校准流程
+ * @brief 更新坐下类流程状态机并生成动作结果
  *
- * @param state 动作状态机状态
- */
-static void enter_middle_calibration_from_sit(controller::action_state &state)
-{
-    state.mode = controller::mode_id::MIDDLE_CALIBRATION;
-    state.timer = 0;
-    state.ready_timer = 0;
-    state.elapsed = 0;
-}
-
-/**
- * @brief 更新坐下类流程状态机并生成平衡请求
- *
- * @param state 动作状态机状态
+ * @param runtime 坐下类流程运行状态
  * @param ctx 动作输入输出上下文
  * @param tick_ms 本次更新周期，单位毫秒
  * @param calibration 是否在坐下完成后执行中位校准
  *
- * @return 生成的平衡请求
+ * @return 生成的动作结果
  */
-static controller::balance_request update_sit_flow(controller::action_state &state, controller::action_io &ctx,
-    uint32_t tick_ms, bool calibration)
+static controller::action_result update_sit_flow(controller::actions::action_runtime &runtime,
+    controller::action_io &ctx, uint32_t tick_ms, bool calibration)
 {
-    controller::balance_request cmd;
-    switch(state.phase)
+    controller::action_result result;
+    switch(runtime.phase)
     {
         case controller::actions::PREPARE:
-            cmd.mode = controller::balance_drive_mode::BALANCE;
-            cmd.enable_steering = true;
+            result.balance.mode = controller::balance_drive_mode::BALANCE;
+            result.balance.enable_steering = true;
             controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
-            state.timer = 0;
-            state.phase = controller::actions::INIT_PREPARE;
+            runtime.timer = 0;
+            runtime.phase = controller::actions::INIT_PREPARE;
             break;
 
         case controller::actions::INIT_PREPARE:
-            cmd.mode = controller::balance_drive_mode::BALANCE;
-            cmd.enable_steering = true;
+            result.balance.mode = controller::balance_drive_mode::BALANCE;
+            result.balance.enable_steering = true;
             if(servo_middle_ready())
             {
-                state.timer = 0;
+                runtime.timer = 0;
                 controller::actions::set_torque(2);
-                set_sit_direct_output(cmd);
-                state.phase = controller::actions::MOVING;
+                set_sit_direct_output(result.balance);
+                runtime.phase = controller::actions::MOVING;
             }
             break;
 
         case controller::actions::MOVING:
-            state.timer += tick_ms;
+            runtime.timer += tick_ms;
             if(fabsf(ctx.status.pitch_angle) >= 0.25f)
             {
-                state.timer = 0;
-                cmd.mode = controller::balance_drive_mode::STOP;
-                state.phase = controller::actions::DONE;
+                runtime.timer = 0;
+                result.balance.mode = controller::balance_drive_mode::STOP;
+                runtime.phase = controller::actions::DONE;
                 break;
             }
-            set_sit_direct_output(cmd);
+            set_sit_direct_output(result.balance);
             break;
 
         case controller::actions::DONE:
             if(calibration)
             {
-                state.timer += tick_ms;
-                if(state.timer >= MIDDLE_CALIBRATION_TORQUE_OFF_MS && state.ready_timer == 0)
+                runtime.timer += tick_ms;
+                if(runtime.timer >= MIDDLE_CALIBRATION_TORQUE_OFF_MS && runtime.ready_timer == 0)
                 {
                     controller::actions::set_torque(0);
-                    state.ready_timer = 1;
+                    runtime.ready_timer = 1;
                 }
-                if(state.timer >= MIDDLE_CALIBRATION_RUN_MS && state.elapsed == 0)
+                if(runtime.timer >= MIDDLE_CALIBRATION_RUN_MS && runtime.elapsed == 0)
                 {
                     sts3032::calibrate_middle();
-                    state.elapsed = 1;
+                    runtime.elapsed = 1;
                 }
-                if(state.timer >= MIDDLE_CALIBRATION_SUCCESS_MS && state.elapsed == 1)
+                if(runtime.timer >= MIDDLE_CALIBRATION_SUCCESS_MS && runtime.elapsed == 1)
                 {
                     controller::mark_middle_calibration_success();
-                    state.elapsed = 2;
+                    runtime.elapsed = 2;
                 }
             }
-            else if((state.timer += tick_ms) >= 10000 || ctx.input.disable_leg_torque)
+            else if((runtime.timer += tick_ms) >= 10000 || ctx.input.disable_leg_torque)
             {
                 controller::actions::set_torque(0);
-                state.timer = 10000;
+                runtime.timer = 10000;
             }
-            if(ctx.input.exit_action && !state.sit_exit_locked)
+            if(ctx.input.exit_action && !ctx.sit_exit_locked)
             {
                 controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
                 controller::actions::reset_leg(ctx.leg);
-                state.phase = controller::actions::EXIT_PREPARE;
+                runtime.phase = controller::actions::EXIT_PREPARE;
             }
             break;
 
         case controller::actions::EXIT_PREPARE:
-            if((state.timer += tick_ms) >= 350)
+            if((runtime.timer += tick_ms) >= 350)
             {
-                state.timer = 0;
-                state.elapsed = 0;
-                state.ready_timer = 0;
-                state.phase = controller::actions::EXIT_RECOVER;
+                runtime.timer = 0;
+                runtime.elapsed = 0;
+                runtime.ready_timer = 0;
+                runtime.phase = controller::actions::EXIT_RECOVER;
             }
             break;
 
         case controller::actions::EXIT_RECOVER:
-            cmd = controller::actions::recover_command(state, ctx);
-            if(controller::actions::recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
+            result.balance = controller::actions::recover_command(runtime, ctx);
+            if(controller::actions::recover_ready(runtime, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                controller::actions::begin_mode(state, controller::mode_id::BALANCE);
+                result.request = controller::action_request::ACTION_DONE;
             }
             break;
     }
 
-    return cmd;
+    return result;
 }
 
-/* ---- 坐下与校准动作 API ---- */
+// 管理 SIT 模式的坐下和起身恢复阶段。
+class sit_action_impl : public controller::actions::action
+{
+    public:
+        controller::mode_id mode() const override
+        {
+            return controller::mode_id::SIT;
+        }
+
+        void enter(controller::action_io &ctx, controller::mode_id previous,
+            const controller::action_enter_params &params) override
+        {
+            sit_runtime = controller::actions::action_runtime{};
+        }
+
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            controller::action_result result = update_sit_flow(sit_runtime, ctx, tick_ms, false);
+            if(ctx.input.middle_calibration_request &&
+               sit_phase_can_enter_middle_calibration(sit_runtime.phase))
+            {
+                result.request = controller::action_request::MIDDLE_CALIBRATION;
+            }
+            return result;
+        }
+
+        void exit(controller::action_io &ctx, controller::mode_id next) override
+        {
+        }
+};
+
+// 管理 MIDDLE_CALIBRATION 模式，并复用坐下流程的姿态阶段。
+class middle_calibration_action_impl : public controller::actions::action
+{
+    public:
+        controller::mode_id mode() const override
+        {
+            return controller::mode_id::MIDDLE_CALIBRATION;
+        }
+
+        void enter(controller::action_io &ctx, controller::mode_id previous,
+            const controller::action_enter_params &params) override
+        {
+            if(previous != controller::mode_id::SIT)
+            {
+                sit_runtime = controller::actions::action_runtime{};
+                return;
+            }
+
+            sit_runtime.timer = 0;
+            sit_runtime.ready_timer = 0;
+            sit_runtime.elapsed = 0;
+        }
+
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            return update_sit_flow(sit_runtime, ctx, tick_ms, true);
+        }
+
+        void exit(controller::action_io &ctx, controller::mode_id next) override
+        {
+        }
+};
+
+static sit_action_impl sit_action_instance;
+static middle_calibration_action_impl middle_calibration_action_instance;
 
 /**
- * @brief 更新 SIT 模式状态机并生成平衡请求
+ * @brief 获取 SIT 动作对象
  *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
+ * @return SIT 动作对象
  */
-controller::balance_request controller::actions::update_sit(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
+controller::actions::action &controller::actions::sit_action()
 {
-    if(ctx.input.middle_calibration_request && sit_phase_can_enter_middle_calibration(state.phase))
-    {
-        enter_middle_calibration_from_sit(state);
-    }
-    return update_sit_flow(state, ctx, tick_ms, state.mode == controller::mode_id::MIDDLE_CALIBRATION);
+    return sit_action_instance;
 }
 
 /**
- * @brief 更新舵机中位校准流程并生成平衡请求
+ * @brief 获取 MIDDLE_CALIBRATION 动作对象
  *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
+ * @return MIDDLE_CALIBRATION 动作对象
  */
-controller::balance_request controller::actions::update_middle_calibration(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
+controller::actions::action &controller::actions::middle_calibration_action()
 {
-    return update_sit_flow(state, ctx, tick_ms, true);
+    return middle_calibration_action_instance;
 }

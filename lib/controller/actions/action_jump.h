@@ -7,7 +7,7 @@ namespace controller
 {
     namespace actions
     {
-        balance_request update_jump(action_state &state, action_io &ctx, uint32_t tick_ms);
+        action &jump_action();
     }
 }
 

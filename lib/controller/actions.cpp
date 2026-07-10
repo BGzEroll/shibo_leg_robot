@@ -5,175 +5,220 @@
 #include "actions/action_kick.h"
 #include "actions/action_sit.h"
 
-/* ---- 动作模式切换 ---- */
+/* ---- 基础动作对象 ---- */
 
-/**
- * @brief 切换动作模式并初始化该模式的运行状态
- *
- * @param state 动作状态机状态
- * @param mode 目标动作模式
- * @param jump 跳跃动作类型
- */
-void controller::actions::begin_mode(controller::action_state &state, controller::mode_id mode, controller::jump_command jump)
+// 管理 BOOT 模式的舵机初始化和恢复站立流程。
+class boot_action_impl : public controller::actions::action
 {
-    state.mode = mode;
-    state.phase = controller::actions::PREPARE;
-    state.timer = 0;
-    state.ready_timer = 0;
-    state.elapsed = 0;
-    state.jump = controller::jump_runtime{};
-    state.kick = controller::kick_runtime{};
+    public:
+        controller::mode_id mode() const override
+        {
+            return controller::mode_id::BOOT;
+        }
 
-    if(mode != controller::mode_id::JUMP){return;}
+        void enter(controller::action_io &ctx, controller::mode_id previous,
+            const controller::action_enter_params &params) override
+        {
+            runtime = controller::actions::action_runtime{};
+        }
 
-    if(jump == controller::jump_command::FORWARD){state.jump.linear_dir = 1;}
-    if(jump == controller::jump_command::BACKWARD){state.jump.linear_dir = -1;}
-    if(jump == controller::jump_command::TURN_LEFT){state.jump.turn_dir = 1;}
-    if(jump == controller::jump_command::TURN_RIGHT){state.jump.turn_dir = -1;}
-}
-
-/* ---- 基础动作状态机 ---- */
-
-/**
- * @brief 更新 BOOT 模式状态机并生成平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
- */
-static controller::balance_request update_boot(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
-{
-    controller::balance_request cmd;
-    switch(state.phase)
-    {
-        case controller::actions::PREPARE:
-            controller::actions::set_torque(0);
-            state.phase = controller::actions::WAIT_SIGNAL;
-            break;
-
-        case controller::actions::WAIT_SIGNAL:
-            if(ctx.input.request == controller::action_request::BOOT_CONFIRM &&
-               ctx.battery_valid &&
-               !ctx.battery_low)
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            controller::action_result result;
+            switch(runtime.phase)
             {
-                state.phase = controller::actions::INIT;
+                case controller::actions::PREPARE:
+                    controller::actions::set_torque(0);
+                    runtime.phase = controller::actions::WAIT_SIGNAL;
+                    break;
+
+                case controller::actions::WAIT_SIGNAL:
+                    if(ctx.input.request == controller::action_request::BOOT_CONFIRM &&
+                       ctx.battery_valid &&
+                       !ctx.battery_low)
+                    {
+                        runtime.phase = controller::actions::INIT;
+                    }
+                    break;
+
+                case controller::actions::INIT:
+                    controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+                    controller::actions::reset_leg(ctx.leg);
+                    runtime.phase = controller::actions::INIT_PREPARE;
+                    break;
+
+                case controller::actions::INIT_PREPARE:
+                    if((runtime.timer += tick_ms) >= 350)
+                    {
+                        runtime.timer = 0;
+                        runtime.elapsed = 0;
+                        runtime.ready_timer = 0;
+                        runtime.phase = controller::actions::INIT_RECOVER;
+                    }
+                    break;
+
+                case controller::actions::INIT_RECOVER:
+                    result.balance = controller::actions::recover_command(runtime, ctx);
+                    if(controller::actions::recover_ready(runtime, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
+                    {
+                        result.request = controller::action_request::ACTION_DONE;
+                    }
+                    break;
             }
-            break;
+            return result;
+        }
 
-        case controller::actions::INIT:
-            controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
-            controller::actions::reset_leg(ctx.leg);
-            state.phase = controller::actions::INIT_PREPARE;
-            break;
+        void exit(controller::action_io &ctx, controller::mode_id next) override
+        {
+        }
 
-        case controller::actions::INIT_PREPARE:
-            if((state.timer += tick_ms) >= 350)
+    private:
+        controller::actions::action_runtime runtime;
+};
+
+// 管理 BALANCE 模式的常规平衡、腿部调节和语义请求上报。
+class balance_action_impl : public controller::actions::action
+{
+    public:
+        controller::mode_id mode() const override
+        {
+            return controller::mode_id::BALANCE;
+        }
+
+        void enter(controller::action_io &ctx, controller::mode_id previous,
+            const controller::action_enter_params &params) override
+        {
+        }
+
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            controller::action_result result;
+            result.balance.mode = controller::balance_drive_mode::BALANCE;
+            result.balance.enable_steering = true;
+            result.balance.linear_vel = ctx.input.linear_cmd;
+            result.balance.yaw_rate = ctx.input.yaw_cmd;
+            controller::actions::run_leg_control(ctx);
+
+            if(ctx.input.reset_leg)
             {
-                state.timer = 0;
-                state.elapsed = 0;
-                state.ready_timer = 0;
-                state.phase = controller::actions::INIT_RECOVER;
+                controller::actions::reset_leg(ctx.leg);
             }
-            break;
 
-        case controller::actions::INIT_RECOVER:
-            cmd = controller::actions::recover_command(state, ctx);
-            if(controller::actions::recover_ready(state, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
+            if(ctx.input.middle_calibration_request)
             {
-                controller::actions::begin_mode(state, controller::mode_id::BALANCE);
+                result.request = controller::action_request::MIDDLE_CALIBRATION;
             }
-            break;
-    }
-    return cmd;
-}
+            else
+            {
+                result.request = ctx.input.request;
+            }
+            return result;
+        }
+
+        void exit(controller::action_io &ctx, controller::mode_id next) override
+        {
+        }
+};
+
+// 管理 STOP 模式的空输出和重新 BOOT 请求上报。
+class stop_action_impl : public controller::actions::action
+{
+    public:
+        controller::mode_id mode() const override
+        {
+            return controller::mode_id::STOP;
+        }
+
+        void enter(controller::action_io &ctx, controller::mode_id previous,
+            const controller::action_enter_params &params) override
+        {
+        }
+
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            controller::action_result result;
+            result.request = ctx.input.request;
+            return result;
+        }
+
+        void exit(controller::action_io &ctx, controller::mode_id next) override
+        {
+        }
+};
+
+static boot_action_impl boot_action_instance;
+static balance_action_impl balance_action_instance;
+static stop_action_impl stop_action_instance;
+
+/* ---- 动作调度内部流程 ---- */
 
 /**
- * @brief 更新 BALANCE 模式状态机并生成平衡请求
+ * @brief 按模式获取静态动作对象
  *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
+ * @param mode 动作模式
  *
- * @return 生成的平衡请求
+ * @return 动作对象
  */
-static controller::balance_request update_balance(controller::action_state &state, controller::action_io &ctx)
+static controller::actions::action &action_for_mode(controller::mode_id mode)
 {
-    controller::balance_request cmd;
-    cmd.mode = controller::balance_drive_mode::BALANCE;
-    cmd.enable_steering = true;
-    cmd.linear_vel = ctx.input.linear_cmd;
-    cmd.yaw_rate = ctx.input.yaw_cmd;
-    controller::actions::run_leg_control(ctx);
-
-    if(ctx.input.reset_leg)
+    switch(mode)
     {
-        controller::actions::reset_leg(ctx.leg);
-    }
+        case controller::mode_id::BOOT:
+            return boot_action_instance;
 
-    return cmd;
-}
+        case controller::mode_id::BALANCE:
+            return balance_action_instance;
 
-/**
- * @brief 应用 BALANCE 模式产生的动作切换请求
- *
- * @param state 动作状态机状态
- * @param request 动作切换请求
- */
-static void route_balance_request(controller::action_state &state, controller::action_request request)
-{
-    switch(request)
-    {
-        case controller::action_request::RESET_BALANCE:
-            controller::actions::begin_mode(state, controller::mode_id::BALANCE);
-            break;
+        case controller::mode_id::SIT:
+            return controller::actions::sit_action();
 
-        case controller::action_request::SIT:
-            controller::actions::begin_mode(state, controller::mode_id::SIT);
-            break;
+        case controller::mode_id::JUMP:
+            return controller::actions::jump_action();
 
-        case controller::action_request::JUMP_IN_PLACE:
-            controller::actions::begin_mode(
-                state, controller::mode_id::JUMP, controller::jump_command::IN_PLACE);
-            break;
+        case controller::mode_id::KICK_PLACE:
+            return controller::actions::kick_place_action();
 
-        case controller::action_request::JUMP_FORWARD:
-            controller::actions::begin_mode(
-                state, controller::mode_id::JUMP, controller::jump_command::FORWARD);
-            break;
+        case controller::mode_id::KICK_RUN:
+            return controller::actions::kick_run_action();
 
-        case controller::action_request::JUMP_BACKWARD:
-            controller::actions::begin_mode(
-                state, controller::mode_id::JUMP, controller::jump_command::BACKWARD);
-            break;
+        case controller::mode_id::MIDDLE_CALIBRATION:
+            return controller::actions::middle_calibration_action();
 
-        case controller::action_request::JUMP_LEFT:
-            controller::actions::begin_mode(
-                state, controller::mode_id::JUMP, controller::jump_command::TURN_LEFT);
-            break;
-
-        case controller::action_request::JUMP_RIGHT:
-            controller::actions::begin_mode(
-                state, controller::mode_id::JUMP, controller::jump_command::TURN_RIGHT);
-            break;
-
-        case controller::action_request::KICK_PLACE:
-            controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
-            break;
-
-        case controller::action_request::KICK_RUN:
-            controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
-            break;
-
+        case controller::mode_id::STOP:
         default:
-            break;
+            return stop_action_instance;
     }
+}
+
+/**
+ * @brief 切换当前动作对象并执行生命周期回调
+ *
+ * @param state 动作调度状态
+ * @param ctx 动作输入输出上下文
+ * @param next_mode 目标模式
+ * @param params 进入目标动作的参数
+ */
+static void switch_action(controller::action_state &state, controller::action_io &ctx,
+    controller::mode_id next_mode, const controller::action_enter_params &params = controller::action_enter_params{})
+{
+    controller::mode_id previous = state.mode;
+    controller::actions::action *previous_action = state.current;
+    controller::actions::action &next_action = action_for_mode(next_mode);
+
+    if(previous_action)
+    {
+        previous_action->exit(ctx, next_mode);
+    }
+
+    state.mode = next_mode;
+    state.current = &next_action;
+    next_action.enter(ctx, previous, params);
 }
 
 /**
  * @brief 在低电坐下流程中锁定起身路径
  *
- * @param state 动作状态机状态
+ * @param state 动作调度状态
  * @param ctx 动作输入输出上下文
  */
 static void update_sit_exit_lock(controller::action_state &state, const controller::action_io &ctx)
@@ -187,23 +232,179 @@ static void update_sit_exit_lock(controller::action_state &state, const controll
     }
 }
 
+/**
+ * @brief 将跳跃语义请求转换为动作进入参数
+ *
+ * @param request 动作语义请求
+ *
+ * @return 动作进入参数
+ */
+static controller::action_enter_params jump_params_for_request(controller::action_request request)
+{
+    controller::action_enter_params params;
+    switch(request)
+    {
+        case controller::action_request::JUMP_FORWARD:
+            params.jump = controller::jump_command::FORWARD;
+            break;
+
+        case controller::action_request::JUMP_BACKWARD:
+            params.jump = controller::jump_command::BACKWARD;
+            break;
+
+        case controller::action_request::JUMP_LEFT:
+            params.jump = controller::jump_command::TURN_LEFT;
+            break;
+
+        case controller::action_request::JUMP_RIGHT:
+            params.jump = controller::jump_command::TURN_RIGHT;
+            break;
+
+        case controller::action_request::JUMP_IN_PLACE:
+        default:
+            params.jump = controller::jump_command::IN_PLACE;
+            break;
+    }
+    return params;
+}
+
+/**
+ * @brief 应用动作语义请求产生的模式切换
+ *
+ * @param state 动作调度状态
+ * @param ctx 动作输入输出上下文
+ * @param request 动作语义请求
+ */
+static void apply_transition(controller::action_state &state, controller::action_io &ctx,
+    controller::action_request request)
+{
+    if(request == controller::action_request::NONE){return;}
+
+    if(state.mode != controller::mode_id::STOP &&
+       request == controller::action_request::STOP)
+    {
+        switch_action(state, ctx, controller::mode_id::STOP);
+        return;
+    }
+
+    switch(state.mode)
+    {
+        case controller::mode_id::BOOT:
+            if(request == controller::action_request::ACTION_DONE)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            break;
+
+        case controller::mode_id::BALANCE:
+            if(request == controller::action_request::RESET_BALANCE)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            else if(request == controller::action_request::SIT)
+            {
+                switch_action(state, ctx, controller::mode_id::SIT);
+            }
+            else if(request == controller::action_request::MIDDLE_CALIBRATION)
+            {
+                switch_action(state, ctx, controller::mode_id::MIDDLE_CALIBRATION);
+            }
+            else if(request == controller::action_request::JUMP_IN_PLACE ||
+                    request == controller::action_request::JUMP_FORWARD ||
+                    request == controller::action_request::JUMP_BACKWARD ||
+                    request == controller::action_request::JUMP_LEFT ||
+                    request == controller::action_request::JUMP_RIGHT)
+            {
+                switch_action(state, ctx, controller::mode_id::JUMP, jump_params_for_request(request));
+            }
+            else if(request == controller::action_request::KICK_PLACE)
+            {
+                switch_action(state, ctx, controller::mode_id::KICK_PLACE);
+            }
+            else if(request == controller::action_request::KICK_RUN)
+            {
+                switch_action(state, ctx, controller::mode_id::KICK_RUN);
+            }
+            break;
+
+        case controller::mode_id::SIT:
+            if(request == controller::action_request::MIDDLE_CALIBRATION)
+            {
+                switch_action(state, ctx, controller::mode_id::MIDDLE_CALIBRATION);
+            }
+            else if(request == controller::action_request::ACTION_DONE && !state.sit_exit_locked)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            break;
+
+        case controller::mode_id::MIDDLE_CALIBRATION:
+            if(request == controller::action_request::ACTION_DONE && !state.sit_exit_locked)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            break;
+
+        case controller::mode_id::JUMP:
+            if(request == controller::action_request::ACTION_DONE)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            break;
+
+        case controller::mode_id::KICK_PLACE:
+            if(request == controller::action_request::KICK_RUN)
+            {
+                switch_action(state, ctx, controller::mode_id::KICK_RUN);
+            }
+            else if(request == controller::action_request::ACTION_DONE)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            break;
+
+        case controller::mode_id::KICK_RUN:
+            if(request == controller::action_request::KICK_PLACE)
+            {
+                switch_action(state, ctx, controller::mode_id::KICK_PLACE);
+            }
+            else if(request == controller::action_request::ACTION_DONE)
+            {
+                switch_action(state, ctx, controller::mode_id::BALANCE);
+            }
+            break;
+
+        case controller::mode_id::STOP:
+            if(request == controller::action_request::BOOT &&
+               !state.sit_exit_locked)
+            {
+                switch_action(state, ctx, controller::mode_id::BOOT);
+            }
+            break;
+
+        default:
+            break;
+    }
+}
+
 /* ---- 动作调度 API ---- */
 
 /**
- * @brief 初始化动作状态机
+ * @brief 初始化动作调度状态
  *
- * @param state 动作状态机状态
+ * @param state 动作调度状态
  */
 void controller::actions_init(controller::action_state &state)
 {
+    state.mode = controller::mode_id::BOOT;
+    state.current = &boot_action_instance;
     state.sit_exit_locked = false;
-    controller::actions::begin_mode(state, controller::mode_id::BOOT);
 }
 
 /**
  * @brief 获取当前动作模式
  *
- * @param state 动作状态机状态
+ * @param state 动作调度状态
  *
  * @return 当前动作模式
  */
@@ -213,92 +414,33 @@ controller::mode_id controller::actions_mode(const controller::action_state &sta
 }
 
 /**
- * @brief 按当前动作模式更新状态机并生成平衡请求
+ * @brief 按当前动作对象更新状态机并生成平衡请求
  *
- * @param state 动作状态机状态
+ * @param state 动作调度状态
  * @param ctx 动作输入输出上下文
  * @param tick_ms 本次更新周期，单位毫秒
  *
  * @return 生成的平衡请求
  */
-controller::balance_request controller::actions_update(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
+controller::balance_request controller::actions_update(controller::action_state &state, controller::action_io &ctx,
+    uint32_t tick_ms)
 {
+    if(!state.current)
+    {
+        state.current = &action_for_mode(state.mode);
+    }
+
     update_sit_exit_lock(state, ctx);
+    ctx.sit_exit_locked = state.sit_exit_locked;
 
     if(state.mode != controller::mode_id::STOP &&
        ctx.input.request == controller::action_request::STOP)
     {
-        controller::actions::begin_mode(state, controller::mode_id::STOP);
+        switch_action(state, ctx, controller::mode_id::STOP);
         return controller::balance_request{};
     }
 
-    switch(state.mode)
-    {
-        case controller::mode_id::BOOT:
-            return update_boot(state, ctx, tick_ms);
-
-        case controller::mode_id::BALANCE:
-        {
-            controller::balance_request cmd = update_balance(state, ctx);
-            if(ctx.input.middle_calibration_request)
-            {
-                controller::actions::begin_mode(state, controller::mode_id::MIDDLE_CALIBRATION);
-                return cmd;
-            }
-            route_balance_request(state, ctx.input.request);
-            return cmd;
-        }
-
-        case controller::mode_id::SIT:
-            return controller::actions::update_sit(state, ctx, tick_ms);
-
-        case controller::mode_id::JUMP:
-            return controller::actions::update_jump(state, ctx, tick_ms);
-
-        case controller::mode_id::KICK_PLACE:
-            if(ctx.input.request == controller::action_request::KICK_EXIT)
-            {
-                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
-                controller::actions::begin_kick_exit(state);
-                return cmd;
-            }
-            if(state.phase != controller::actions::EXIT_PREPARE &&
-               ctx.input.request == controller::action_request::KICK_RUN)
-            {
-                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
-                controller::actions::begin_mode(state, controller::mode_id::KICK_RUN);
-                return cmd;
-            }
-            return controller::actions::update_kick_place(state, ctx, tick_ms);
-
-        case controller::mode_id::KICK_RUN:
-            if(ctx.input.request == controller::action_request::KICK_EXIT)
-            {
-                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
-                controller::actions::begin_kick_exit(state);
-                return cmd;
-            }
-            if(state.phase != controller::actions::EXIT_PREPARE &&
-               ctx.input.request == controller::action_request::KICK_PLACE)
-            {
-                controller::balance_request cmd = controller::actions::kick_base_command(ctx);
-                controller::actions::begin_mode(state, controller::mode_id::KICK_PLACE);
-                return cmd;
-            }
-            return controller::actions::update_kick_run(state, ctx, tick_ms);
-
-        case controller::mode_id::MIDDLE_CALIBRATION:
-            return controller::actions::update_middle_calibration(state, ctx, tick_ms);
-
-        case controller::mode_id::STOP:
-            if(ctx.input.request == controller::action_request::BOOT &&
-               !state.sit_exit_locked)
-            {
-                controller::actions::begin_mode(state, controller::mode_id::BOOT);
-            }
-            return controller::balance_request{};
-
-        default:
-            return controller::balance_request{};
-    }
+    controller::action_result result = state.current->update(ctx, tick_ms);
+    apply_transition(state, ctx, result.request);
+    return result.balance;
 }

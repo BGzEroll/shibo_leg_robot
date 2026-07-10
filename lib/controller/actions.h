@@ -9,6 +9,11 @@
 
 namespace controller
 {
+    namespace actions
+    {
+        class action;
+    }
+
     enum class mode_id : uint8_t
     {
         BOOT = 0,
@@ -76,48 +81,67 @@ namespace controller
         float max_steer_vel;
         bool battery_valid;
         bool battery_low;
+        bool sit_exit_locked;
     };
 
-    struct jump_runtime
+    struct action_enter_params
     {
-        int8_t linear_dir = 0;
-        int8_t turn_dir = 0;
-        float target_yaw = 0.0f;
-        float linear_cmd = 0.0f;
-        float yaw_cmd = 0.0f;
+        jump_command jump = jump_command::IN_PLACE;
     };
 
-    struct kick_runtime
+    struct action_result
     {
-        float cam_angle = 90.0f;
-        float target_yaw = 0.0f;
-        int16_t last_dy = 0;
-        uint16_t frontier_angle = 181;
-        uint32_t last_dy_time = 0;
-        uint32_t last_vision_seq = 0;
-        uint32_t kick_timer = 0;
-        uint32_t kick_cooldown_timer = 0;
-        uint32_t post_timer = 0;
-        bool chased = false;
-        bool aligned = false;
-        bool kicking = false;
-        bool post_kick = false;
-        float cam_error = 0.0f;
-        float cam_rate = 0.0f;
-        float yaw_rate = 0.0f;
+        balance_request balance;
+        action_request request = action_request::NONE;
     };
 
     struct action_state
     {
         mode_id mode = mode_id::BOOT;
-        uint8_t phase = 0;
-        uint32_t timer = 0;
-        uint32_t ready_timer = 0;
-        uint32_t elapsed = 0;
-        jump_runtime jump;
-        kick_runtime kick;
+        actions::action *current = nullptr;
         bool sit_exit_locked = false;
     };
+
+    namespace actions
+    {
+        enum phase : uint8_t
+        {
+            PREPARE = 0,
+            WAIT_SIGNAL,
+            INIT,
+            INIT_PREPARE,
+            INIT_RECOVER,
+            MOVING,
+            DONE,
+            EXIT_PREPARE,
+            EXIT_RECOVER,
+            PUSH,
+            FLY,
+            LAND,
+            RECOVER
+        };
+
+        struct action_runtime
+        {
+            uint8_t phase = PREPARE;
+            uint32_t timer = 0;
+            uint32_t ready_timer = 0;
+            uint32_t elapsed = 0;
+        };
+
+        class action
+        {
+            public:
+                virtual ~action() = default;
+
+            public:
+                virtual mode_id mode() const = 0;
+                virtual void enter(action_io &ctx, mode_id previous,
+                    const action_enter_params &params) = 0;
+                virtual action_result update(action_io &ctx, uint32_t tick_ms) = 0;
+                virtual void exit(action_io &ctx, mode_id next) = 0;
+        };
+    }
 
     void actions_init(action_state &state);
     mode_id actions_mode(const action_state &state);

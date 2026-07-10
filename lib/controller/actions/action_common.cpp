@@ -111,21 +111,21 @@ void controller::actions::run_leg_control(action_io &ctx, float height_count_off
  *
  * @return 已经可以退出恢复阶段时返回 true
  */
-bool controller::actions::recover_ready(action_state &state, const balance_core::motion_status &status, uint32_t tick_ms,
+bool controller::actions::recover_ready(action_runtime &runtime, const balance_core::motion_status &status, uint32_t tick_ms,
     float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms)
 {
-    state.elapsed += tick_ms;
+    runtime.elapsed += tick_ms;
     if(fabsf(status.pitch_angle) < pitch_limit &&
        fabsf(status.pitch_rate) < rate_limit)
     {
-        state.ready_timer += tick_ms;
+        runtime.ready_timer += tick_ms;
     }
     else
     {
-        state.ready_timer = 0;
+        runtime.ready_timer = 0;
     }
 
-    return state.ready_timer >= hold_ms || state.elapsed >= timeout_ms;
+    return runtime.ready_timer >= hold_ms || runtime.elapsed >= timeout_ms;
 }
 
 /**
@@ -136,11 +136,11 @@ bool controller::actions::recover_ready(action_state &state, const balance_core:
  *
  * @return 生成的平衡请求
  */
-controller::balance_request controller::actions::recover_command(action_state &state, action_io &ctx)
+controller::balance_request controller::actions::recover_command(action_runtime &runtime, action_io &ctx)
 {
     balance_request cmd;
     cmd.mode = controller::balance_drive_mode::RECOVER;
-    cmd.recover_blend = constrain((float)state.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
+    cmd.recover_blend = constrain((float)runtime.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
     run_leg_control(ctx);
     return cmd;
 }
@@ -157,21 +157,21 @@ controller::balance_request controller::actions::recover_command(action_state &s
  *
  * @return 姿态序列执行完成时返回 true
  */
-bool controller::actions::run_pose_sequence(action_state &state, const pose_step *steps, uint8_t count, uint32_t tick_ms)
+bool controller::actions::run_pose_sequence(action_runtime &runtime, const pose_step *steps, uint8_t count, uint32_t tick_ms)
 {
     if(steps == nullptr || count == 0){return true;}
-    if(state.phase >= count){return true;}
+    if(runtime.phase >= count){return true;}
 
-    const pose_step &step = steps[state.phase];
-    if(state.timer == 0)
+    const pose_step &step = steps[runtime.phase];
+    if(runtime.timer == 0)
     {
         set_pose(step.left, step.right, step.speed, step.accel);
     }
 
-    state.timer += tick_ms;
-    if(state.timer < step.hold_ms){return false;}
+    runtime.timer += tick_ms;
+    if(runtime.timer < step.hold_ms){return false;}
 
-    state.timer = 0;
-    state.phase++;
-    return state.phase >= count;
+    runtime.timer = 0;
+    runtime.phase++;
+    return runtime.phase >= count;
 }

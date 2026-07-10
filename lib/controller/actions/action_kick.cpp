@@ -1,6 +1,5 @@
 #include "action_kick.h"
 
-#include "action_common.h"
 #include "host_comm.h"
 #include "ptk7350.h"
 
@@ -33,422 +32,394 @@ static constexpr uint32_t KICK_EXIT_DELAY_MS = 500;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
 static constexpr float KICK_LEG_HEIGHT_COUNT_OFFSET = 50.0f;
 
+struct kick_runtime
+{
+    float cam_angle = 90.0f;
+    float target_yaw = 0.0f;
+    int16_t last_dy = 0;
+    uint16_t frontier_angle = 181;
+    uint32_t last_dy_time = 0;
+    uint32_t last_vision_seq = 0;
+    uint32_t kick_timer = 0;
+    uint32_t kick_cooldown_timer = 0;
+    uint32_t post_timer = 0;
+    bool chased = false;
+    bool aligned = false;
+    bool kicking = false;
+    bool post_kick = false;
+    float cam_error = 0.0f;
+    float cam_rate = 0.0f;
+    float yaw_rate = 0.0f;
+};
+
 /* ---- 踢球基础控制 ---- */
 
-/**
- * @brief 设置摄像头舵机角度
- *
- * @param state 动作状态机状态
- * @param angle 目标角度
- */
-static void set_camera(controller::action_state &state, float angle)
+// 管理踢球动作的共同视觉、舵机和退出流程。
+class kick_action_base : public controller::actions::action
 {
-    state.kick.cam_angle = constrain(angle, (float)CAMSERVO_MIN, (float)CAMSERVO_MAX);
-    ptk7350::cam_servo.set_angle((uint16_t)state.kick.cam_angle);
-}
-
-/**
- * @brief 设置前挡舵机角度
- *
- * @param state 动作状态机状态
- * @param angle 目标角度
- */
-static void set_frontier(controller::action_state &state, uint16_t angle)
-{
-    angle = constrain(angle, (uint16_t)FRONTIERSERVO_MIN, (uint16_t)FRONTIERSERVO_MAX);
-    if(state.kick.frontier_angle == angle){return;}
-
-    state.kick.frontier_angle = angle;
-    ptk7350::frontier_servo.set_angle(angle);
-}
-
-/**
- * @brief 生成踢球模式的基础平衡请求
- *
- * @param ctx 动作输入输出上下文
- *
- * @return 生成的平衡请求
- */
-controller::balance_request controller::actions::kick_base_command(controller::action_io &ctx)
-{
-    controller::balance_request cmd;
-    cmd.mode = controller::balance_drive_mode::BALANCE;
-    cmd.enable_steering = true;
-    cmd.linear_vel = ctx.input.linear_cmd;
-    cmd.yaw_rate = ctx.input.yaw_cmd;
-    controller::actions::run_leg_control(ctx, KICK_LEG_HEIGHT_COUNT_OFFSET);
-    return cmd;
-}
-
-/**
- * @brief 获取有效视觉测量
- *
- * @param out 视觉测量输出
- *
- * @return 当前视觉有效时返回 true
- */
-static bool read_vision(host_comm::vision_measurement &out)
-{
-    return host_comm::vision_latest(out);
-}
-
-/**
- * @brief 判断视觉测量是否是尚未用于相机步进的新帧
- *
- * @param state 动作状态机状态
- * @param vision 视觉测量
- *
- * @return 新视觉帧时返回 true
- */
-static bool consume_vision_step(controller::action_state &state, const host_comm::vision_measurement &vision)
-{
-    if(state.kick.last_vision_seq == vision.seq){return false;}
-
-    state.kick.last_vision_seq = vision.seq;
-    return true;
-}
-
-/**
- * @brief 根据 dy 按 Tommy 的 PD 步进调整摄像头俯仰角
- *
- * @param state 动作状态机状态
- * @param dy 目标纵向偏差
- */
-static void aim_camera(controller::action_state &state, int16_t dy)
-{
-    if(abs((int32_t)dy) <= CAM_AIM_DEADBAND)
-    {
-        state.kick.last_dy = 0;
-        state.kick.cam_error = 0.0f;
-        state.kick.cam_rate = 0.0f;
-        return;
-    }
-
-    uint32_t now = millis();
-    if(!state.kick.last_dy_time)
-    {
-        state.kick.last_dy_time = now;
-        state.kick.last_dy = dy;
-    }
-
-    uint32_t dt = max((uint32_t)1, (uint32_t)(now - state.kick.last_dy_time));
-    float p_term = CAM_PD_P * (float)dy;
-    float d_term = CAM_PD_D * (float)(dy - state.kick.last_dy) / (float)dt * 10.0f;
-    float pd_output = constrain(p_term + d_term, -CAM_PD_STEP_LIMIT, CAM_PD_STEP_LIMIT);
-
-    state.kick.last_dy = dy;
-    state.kick.last_dy_time = now;
-    state.kick.cam_error = (float)dy;
-    state.kick.cam_rate = -pd_output;
-    set_camera(state, state.kick.cam_angle - pd_output);
-}
-
-/**
- * @brief 根据 dx 生成瞄准转向速度
- *
- * @param dx 目标横向偏差
- *
- * @return 目标偏航角速度
- */
-static float aim_yaw_rate(int16_t dx)
-{
-    if(abs((int32_t)dx) < YAW_AIM_DEADBAND){return 0.0f;}
-
-    float direction = (dx > 0) ? 1.0f : -1.0f;
-    float joy_rate = constrain((float)abs((int32_t)dx) * YAW_AIM_P, 0.0f, JOY_RATE_LIMIT) * direction;
-    return constrain(joy_rate * (YAW_RATE_LIMIT / JOY_RATE_LIMIT), -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
-}
-
-/**
- * @brief 将视觉瞄准转向叠加到手动转向输入上
- *
- * @param ctx 动作输入输出上下文
- * @param vision_yaw_rate 视觉瞄准生成的偏航角速度
- *
- * @return 合成后的偏航角速度
- */
-static float combine_yaw_rate(const controller::action_io &ctx, float vision_yaw_rate)
-{
-    return constrain(ctx.input.yaw_cmd + vision_yaw_rate, -ctx.max_steer_vel, ctx.max_steer_vel);
-}
-
-/**
- * @brief 判断是否存在明显的手动前后输入
- *
- * @param ctx 动作输入输出上下文
- *
- * @return 手动前后输入超过死区时返回 true
- */
-static bool manual_linear_active(const controller::action_io &ctx)
-{
-    return fabsf(ctx.input.linear_cmd) > ctx.max_linear_vel * 0.05f;
-}
-
-/* ---- 踢球状态流程 ---- */
-
-/**
- * @brief 处理丢失目标后的追踪复位
- *
- * @param state 动作状态机状态
- */
-static void reset_lost_target(controller::action_state &state)
-{
-    state.kick.cam_error = 0.0f;
-    state.kick.cam_rate = 0.0f;
-    state.kick.yaw_rate = 0.0f;
-    state.kick.last_dy = 0;
-    state.kick.last_dy_time = 0;
-    set_camera(state, CAM_LOST_ANGLE);
-    set_frontier(state, FRONTIER_KICK_ANGLE);
-}
-
-/**
- * @brief 让踢球机构进入准备状态
- *
- * @param state 动作状态机状态
- */
-static void ready_kick(controller::action_state &state)
-{
-    if(!state.kick.kicking)
-    {
-        set_frontier(state, FRONTIER_READY_ANGLE);
-    }
-}
-
-/**
- * @brief 触发一次踢球动作
- *
- * @param state 动作状态机状态
- */
-static void trigger_kick(controller::action_state &state)
-{
-    set_frontier(state, FRONTIER_KICK_ANGLE);
-    state.kick.kicking = true;
-    state.kick.kick_timer = 0;
-    state.kick.kick_cooldown_timer = KICK_COOLDOWN_MS;
-}
-
-/**
- * @brief 判断当前是否允许再次触发踢球
- *
- * @param state 动作状态机状态
- *
- * @return 冷却结束且不在踢球保持阶段时返回 true
- */
-static bool can_trigger_kick(const controller::action_state &state)
-{
-    return !state.kick.kicking && state.kick.kick_cooldown_timer == 0;
-}
-
-/**
- * @brief 推进踢球保持计时
- *
- * @param state 动作状态机状态
- * @param tick_ms 本次更新周期，单位毫秒
- */
-static void update_kick_hold(controller::action_state &state, uint32_t tick_ms)
-{
-    if(!state.kick.kicking){return;}
-
-    state.kick.kick_timer += tick_ms;
-    if(state.kick.kick_timer >= KICK_HOLD_MS)
-    {
-        state.kick.kicking = false;
-        state.kick.kick_timer = 0;
-    }
-}
-
-/**
- * @brief 推进踢球触发冷却计时
- *
- * @param state 动作状态机状态
- * @param tick_ms 本次更新周期，单位毫秒
- */
-static void update_kick_cooldown(controller::action_state &state, uint32_t tick_ms)
-{
-    if(!state.kick.kick_cooldown_timer){return;}
-
-    if(state.kick.kick_cooldown_timer <= tick_ms)
-    {
-        state.kick.kick_cooldown_timer = 0;
-        return;
-    }
-
-    state.kick.kick_cooldown_timer -= tick_ms;
-}
-
-/**
- * @brief 启动踢球模式退出等待
- *
- * @param state 动作状态机状态
- */
-void controller::actions::begin_kick_exit(controller::action_state &state)
-{
-    set_frontier(state, FRONTIER_KICK_ANGLE);
-    state.kick.kicking = false;
-    state.kick.kick_timer = 0;
-    state.timer = 0;
-    state.phase = controller::actions::EXIT_PREPARE;
-}
-
-/**
- * @brief 推进踢球模式退出等待并在延时后回到普通平衡
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 正在处理退出流程时返回 true
- */
-static bool update_kick_exit(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
-{
-    if(state.phase != controller::actions::EXIT_PREPARE){return false;}
-
-    if((state.timer += tick_ms) < KICK_EXIT_DELAY_MS){return true;}
-
-    controller::actions::reset_leg(ctx.leg);
-    controller::actions::begin_mode(state, controller::mode_id::BALANCE);
-    return true;
-}
-
-/**
- * @brief 初始化踢球模式状态
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- */
-static void prepare_kick(controller::action_state &state, controller::action_io &ctx)
-{
-    state.kick = controller::kick_runtime{};
-    state.kick.target_yaw = ctx.status.yaw_angle;
-    set_camera(state, CAM_INITIAL_ANGLE);
-    state.phase = controller::actions::MOVING;
-}
-
-/* ---- 踢球动作 API ---- */
-
-/**
- * @brief 更新原地踢球模式状态机并生成平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
- */
-controller::balance_request controller::actions::update_kick_place(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
-{
-    controller::balance_request cmd = controller::actions::kick_base_command(ctx);
-    if(update_kick_exit(state, ctx, tick_ms)){return cmd;}
-
-    if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
-    update_kick_hold(state, tick_ms);
-    update_kick_cooldown(state, tick_ms);
-
-    host_comm::vision_measurement vision;
-    if(!read_vision(vision))
-    {
-        reset_lost_target(state);
-        return cmd;
-    }
-
-    if(consume_vision_step(state, vision)){aim_camera(state, vision.dy);}
-    cmd.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
-    state.kick.yaw_rate = cmd.yaw_rate;
-
-    if(state.kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
-    {
-        if(can_trigger_kick(state)){trigger_kick(state);}
-    }
-    else
-    {
-        ready_kick(state);
-    }
-    return cmd;
-}
-
-/**
- * @brief 更新运动踢球模式状态机并生成平衡请求
- *
- * @param state 动作状态机状态
- * @param ctx 动作输入输出上下文
- * @param tick_ms 本次更新周期，单位毫秒
- *
- * @return 生成的平衡请求
- */
-controller::balance_request controller::actions::update_kick_run(controller::action_state &state, controller::action_io &ctx, uint32_t tick_ms)
-{
-    controller::balance_request cmd = controller::actions::kick_base_command(ctx);
-    if(update_kick_exit(state, ctx, tick_ms)){return cmd;}
-
-    if(state.phase == controller::actions::PREPARE){prepare_kick(state, ctx);}
-    update_kick_cooldown(state, tick_ms);
-    if(state.kick.post_kick)
-    {
-        if(state.kick.kicking)
+    public:
+        void enter(controller::action_io &ctx, controller::mode_id previous,
+            const controller::action_enter_params &params) override
         {
-            state.kick.kick_timer += tick_ms;
-            if(state.kick.kick_timer >= KICK_HOLD_MS)
-            {
-                state.kick.kicking = false;
-                state.kick.kick_timer = 0;
-            }
+            runtime = controller::actions::action_runtime{};
+            kick = kick_runtime{};
+        }
+
+        void exit(controller::action_io &ctx, controller::mode_id next) override
+        {
+        }
+
+    protected:
+        void set_camera(float angle)
+        {
+            kick.cam_angle = constrain(angle, (float)CAMSERVO_MIN, (float)CAMSERVO_MAX);
+            ptk7350::cam_servo.set_angle((uint16_t)kick.cam_angle);
+        }
+
+        void set_frontier(uint16_t angle)
+        {
+            angle = constrain(angle, (uint16_t)FRONTIERSERVO_MIN, (uint16_t)FRONTIERSERVO_MAX);
+            if(kick.frontier_angle == angle){return;}
+
+            kick.frontier_angle = angle;
+            ptk7350::frontier_servo.set_angle(angle);
+        }
+
+        controller::balance_request kick_base_command(controller::action_io &ctx)
+        {
+            controller::balance_request cmd;
+            cmd.mode = controller::balance_drive_mode::BALANCE;
+            cmd.enable_steering = true;
+            cmd.linear_vel = ctx.input.linear_cmd;
+            cmd.yaw_rate = ctx.input.yaw_cmd;
+            controller::actions::run_leg_control(ctx, KICK_LEG_HEIGHT_COUNT_OFFSET);
             return cmd;
         }
 
-        state.kick.post_timer += tick_ms;
-        if(state.kick.post_timer < RUN_AFTER_KICK_MS)
+        bool read_vision(host_comm::vision_measurement &out)
         {
-            float err = controller::actions::angle_error(state.kick.target_yaw, ctx.status.yaw_angle);
-            if(fabsf(err) < YAW_ALIGN_LIMIT)
+            return host_comm::vision_latest(out);
+        }
+
+        bool consume_vision_step(const host_comm::vision_measurement &vision)
+        {
+            if(kick.last_vision_seq == vision.seq){return false;}
+
+            kick.last_vision_seq = vision.seq;
+            return true;
+        }
+
+        void aim_camera(int16_t dy)
+        {
+            if(abs((int32_t)dy) <= CAM_AIM_DEADBAND)
             {
-                state.kick.aligned = true;
-                if(!manual_linear_active(ctx)){cmd.linear_vel = RUN_BACK_VEL;}
+                kick.last_dy = 0;
+                kick.cam_error = 0.0f;
+                kick.cam_rate = 0.0f;
+                return;
+            }
+
+            uint32_t now = millis();
+            if(!kick.last_dy_time)
+            {
+                kick.last_dy_time = now;
+                kick.last_dy = dy;
+            }
+
+            uint32_t dt = max((uint32_t)1, (uint32_t)(now - kick.last_dy_time));
+            float p_term = CAM_PD_P * (float)dy;
+            float d_term = CAM_PD_D * (float)(dy - kick.last_dy) / (float)dt * 10.0f;
+            float pd_output = constrain(p_term + d_term, -CAM_PD_STEP_LIMIT, CAM_PD_STEP_LIMIT);
+
+            kick.last_dy = dy;
+            kick.last_dy_time = now;
+            kick.cam_error = (float)dy;
+            kick.cam_rate = -pd_output;
+            set_camera(kick.cam_angle - pd_output);
+        }
+
+        float aim_yaw_rate(int16_t dx)
+        {
+            if(abs((int32_t)dx) < YAW_AIM_DEADBAND){return 0.0f;}
+
+            float direction = (dx > 0) ? 1.0f : -1.0f;
+            float joy_rate = constrain((float)abs((int32_t)dx) * YAW_AIM_P, 0.0f, JOY_RATE_LIMIT) * direction;
+            return constrain(joy_rate * (YAW_RATE_LIMIT / JOY_RATE_LIMIT), -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
+        }
+
+        float combine_yaw_rate(const controller::action_io &ctx, float vision_yaw_rate)
+        {
+            return constrain(ctx.input.yaw_cmd + vision_yaw_rate, -ctx.max_steer_vel, ctx.max_steer_vel);
+        }
+
+        bool manual_linear_active(const controller::action_io &ctx)
+        {
+            return fabsf(ctx.input.linear_cmd) > ctx.max_linear_vel * 0.05f;
+        }
+
+        void reset_lost_target()
+        {
+            kick.cam_error = 0.0f;
+            kick.cam_rate = 0.0f;
+            kick.yaw_rate = 0.0f;
+            kick.last_dy = 0;
+            kick.last_dy_time = 0;
+            set_camera(CAM_LOST_ANGLE);
+            set_frontier(FRONTIER_KICK_ANGLE);
+        }
+
+        void ready_kick()
+        {
+            if(!kick.kicking)
+            {
+                set_frontier(FRONTIER_READY_ANGLE);
+            }
+        }
+
+        void trigger_kick()
+        {
+            set_frontier(FRONTIER_KICK_ANGLE);
+            kick.kicking = true;
+            kick.kick_timer = 0;
+            kick.kick_cooldown_timer = KICK_COOLDOWN_MS;
+        }
+
+        bool can_trigger_kick() const
+        {
+            return !kick.kicking && kick.kick_cooldown_timer == 0;
+        }
+
+        void update_kick_hold(uint32_t tick_ms)
+        {
+            if(!kick.kicking){return;}
+
+            kick.kick_timer += tick_ms;
+            if(kick.kick_timer >= KICK_HOLD_MS)
+            {
+                kick.kicking = false;
+                kick.kick_timer = 0;
+            }
+        }
+
+        void update_kick_cooldown(uint32_t tick_ms)
+        {
+            if(!kick.kick_cooldown_timer){return;}
+
+            if(kick.kick_cooldown_timer <= tick_ms)
+            {
+                kick.kick_cooldown_timer = 0;
+                return;
+            }
+
+            kick.kick_cooldown_timer -= tick_ms;
+        }
+
+        void begin_kick_exit()
+        {
+            set_frontier(FRONTIER_KICK_ANGLE);
+            kick.kicking = false;
+            kick.kick_timer = 0;
+            runtime.timer = 0;
+            runtime.phase = controller::actions::EXIT_PREPARE;
+        }
+
+        bool update_kick_exit(controller::action_result &result, controller::action_io &ctx, uint32_t tick_ms)
+        {
+            if(runtime.phase != controller::actions::EXIT_PREPARE){return false;}
+
+            if((runtime.timer += tick_ms) < KICK_EXIT_DELAY_MS){return true;}
+
+            controller::actions::reset_leg(ctx.leg);
+            result.request = controller::action_request::ACTION_DONE;
+            return true;
+        }
+
+        void prepare_kick(controller::action_io &ctx)
+        {
+            kick = kick_runtime{};
+            kick.target_yaw = ctx.status.yaw_angle;
+            set_camera(CAM_INITIAL_ANGLE);
+            runtime.phase = controller::actions::MOVING;
+        }
+
+    protected:
+        controller::actions::action_runtime runtime;
+        kick_runtime kick;
+};
+
+/* ---- 踢球动作对象 ---- */
+
+class kick_place_action_impl : public kick_action_base
+{
+    public:
+        controller::mode_id mode() const override
+        {
+            return controller::mode_id::KICK_PLACE;
+        }
+
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            controller::action_result result;
+            result.balance = kick_base_command(ctx);
+
+            if(ctx.input.request == controller::action_request::KICK_EXIT)
+            {
+                begin_kick_exit();
+                return result;
+            }
+            if(runtime.phase != controller::actions::EXIT_PREPARE &&
+               ctx.input.request == controller::action_request::KICK_RUN)
+            {
+                result.request = controller::action_request::KICK_RUN;
+                return result;
+            }
+            if(update_kick_exit(result, ctx, tick_ms)){return result;}
+
+            if(runtime.phase == controller::actions::PREPARE){prepare_kick(ctx);}
+            update_kick_hold(tick_ms);
+            update_kick_cooldown(tick_ms);
+
+            host_comm::vision_measurement vision;
+            if(!read_vision(vision))
+            {
+                reset_lost_target();
+                return result;
+            }
+
+            if(consume_vision_step(vision)){aim_camera(vision.dy);}
+            result.balance.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
+            kick.yaw_rate = result.balance.yaw_rate;
+
+            if(kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
+            {
+                if(can_trigger_kick()){trigger_kick();}
             }
             else
             {
-                float align_yaw_rate = constrain(err * YAW_ALIGN_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
-                cmd.yaw_rate = combine_yaw_rate(ctx, align_yaw_rate);
+                ready_kick();
             }
-            return cmd;
+            return result;
         }
+};
 
-        state.kick.post_kick = false;
-        state.kick.post_timer = 0;
-        state.kick.chased = false;
-        state.kick.aligned = false;
-    }
-
-    host_comm::vision_measurement vision;
-    if(!read_vision(vision))
-    {
-        reset_lost_target(state);
-        return cmd;
-    }
-
-    if(consume_vision_step(state, vision)){aim_camera(state, vision.dy);}
-    cmd.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
-    state.kick.yaw_rate = cmd.yaw_rate;
-
-    if(state.kick.chased)
-    {
-        if(can_trigger_kick(state))
+class kick_run_action_impl : public kick_action_base
+{
+    public:
+        controller::mode_id mode() const override
         {
-            trigger_kick(state);
-            state.kick.post_kick = true;
+            return controller::mode_id::KICK_RUN;
         }
-        return cmd;
-    }
 
-    if(state.kick.cam_angle < (float)CHASE_BALL_S2 && vision.dy > RUN_KICK_DY && vision.dy < KICK_DY_MAX)
-    {
-        state.kick.chased = true;
-        return cmd;
-    }
+        controller::action_result update(controller::action_io &ctx, uint32_t tick_ms) override
+        {
+            controller::action_result result;
+            result.balance = kick_base_command(ctx);
 
-    int16_t ob_y = OB_BALL_DY - vision.dy;
-    float forward = constrain((float)ob_y * CHASE_LINEAR_KP, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
-    if(!manual_linear_active(ctx)){cmd.linear_vel = forward;}
-    ready_kick(state);
-    return cmd;
+            if(ctx.input.request == controller::action_request::KICK_EXIT)
+            {
+                begin_kick_exit();
+                return result;
+            }
+            if(runtime.phase != controller::actions::EXIT_PREPARE &&
+               ctx.input.request == controller::action_request::KICK_PLACE)
+            {
+                result.request = controller::action_request::KICK_PLACE;
+                return result;
+            }
+            if(update_kick_exit(result, ctx, tick_ms)){return result;}
+
+            if(runtime.phase == controller::actions::PREPARE){prepare_kick(ctx);}
+            update_kick_cooldown(tick_ms);
+            if(kick.post_kick)
+            {
+                if(kick.kicking)
+                {
+                    kick.kick_timer += tick_ms;
+                    if(kick.kick_timer >= KICK_HOLD_MS)
+                    {
+                        kick.kicking = false;
+                        kick.kick_timer = 0;
+                    }
+                    return result;
+                }
+
+                kick.post_timer += tick_ms;
+                if(kick.post_timer < RUN_AFTER_KICK_MS)
+                {
+                    float err = controller::actions::angle_error(kick.target_yaw, ctx.status.yaw_angle);
+                    if(fabsf(err) < YAW_ALIGN_LIMIT)
+                    {
+                        kick.aligned = true;
+                        if(!manual_linear_active(ctx)){result.balance.linear_vel = RUN_BACK_VEL;}
+                    }
+                    else
+                    {
+                        float align_yaw_rate = constrain(err * YAW_ALIGN_KP, -YAW_RATE_LIMIT, YAW_RATE_LIMIT);
+                        result.balance.yaw_rate = combine_yaw_rate(ctx, align_yaw_rate);
+                    }
+                    return result;
+                }
+
+                kick.post_kick = false;
+                kick.post_timer = 0;
+                kick.chased = false;
+                kick.aligned = false;
+            }
+
+            host_comm::vision_measurement vision;
+            if(!read_vision(vision))
+            {
+                reset_lost_target();
+                return result;
+            }
+
+            if(consume_vision_step(vision)){aim_camera(vision.dy);}
+            result.balance.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
+            kick.yaw_rate = result.balance.yaw_rate;
+
+            if(kick.chased)
+            {
+                if(can_trigger_kick())
+                {
+                    trigger_kick();
+                    kick.post_kick = true;
+                }
+                return result;
+            }
+
+            if(kick.cam_angle < (float)CHASE_BALL_S2 && vision.dy > RUN_KICK_DY && vision.dy < KICK_DY_MAX)
+            {
+                kick.chased = true;
+                return result;
+            }
+
+            int16_t ob_y = OB_BALL_DY - vision.dy;
+            float forward = constrain((float)ob_y * CHASE_LINEAR_KP, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
+            if(!manual_linear_active(ctx)){result.balance.linear_vel = forward;}
+            ready_kick();
+            return result;
+        }
+};
+
+static kick_place_action_impl kick_place_action_instance;
+static kick_run_action_impl kick_run_action_instance;
+
+/**
+ * @brief 获取 KICK_PLACE 动作对象
+ *
+ * @return KICK_PLACE 动作对象
+ */
+controller::actions::action &controller::actions::kick_place_action()
+{
+    return kick_place_action_instance;
+}
+
+/**
+ * @brief 获取 KICK_RUN 动作对象
+ *
+ * @return KICK_RUN 动作对象
+ */
+controller::actions::action &controller::actions::kick_run_action()
+{
+    return kick_run_action_instance;
 }

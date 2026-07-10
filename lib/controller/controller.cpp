@@ -200,7 +200,8 @@ void controller::update(uint32_t tick_ms)
         balance_info.max_linear_vel,
         balance_info.max_steer_vel,
         battery_data.valid,
-        battery_data.low
+        battery_data.low,
+        false
     };
     controller::balance_request request = controller::actions_update(action, ctx, tick_ms);
 
