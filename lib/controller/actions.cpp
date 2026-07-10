@@ -216,17 +216,23 @@ static void switch_action(controller::action_state &state, controller::action_io
 }
 
 /**
- * @brief 在低电坐下流程中锁定起身路径
+ * @brief 根据电池状态更新坐下后的起身锁
  *
  * @param state 动作调度状态
  * @param ctx 动作输入输出上下文
  */
 static void update_sit_exit_lock(controller::action_state &state, const controller::action_io &ctx)
 {
+    if(ctx.battery_valid && !ctx.battery_low)
+    {
+        state.sit_exit_locked = false;
+        return;
+    }
+
     bool sit_mode =
         state.mode == controller::mode_id::SIT ||
         state.mode == controller::mode_id::MIDDLE_CALIBRATION;
-    if(sit_mode && ctx.battery_low)
+    if(sit_mode && ctx.battery_valid && ctx.battery_low)
     {
         state.sit_exit_locked = true;
     }

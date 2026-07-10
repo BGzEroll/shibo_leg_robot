@@ -126,7 +126,7 @@ sit_exit_locked
 
 `sit_action` 和 `middle_calibration_action` 复用同一个坐下流程 runtime，以保留原有“坐下过程中可进入中位校准”的行为。
 
-坐下退出流程完成后返回 `ACTION_DONE`；如果 `sit_exit_locked` 已经被低电锁定，transition 不允许回到 `BALANCE`。
+坐下退出流程完成后返回 `ACTION_DONE`；如果 `sit_exit_locked` 已经被低电锁定，transition 不允许回到 `BALANCE`。当电池检测有效且恢复到非低电状态后，锁会自动解除。
 
 ### `action_kick.cpp`
 
@@ -191,7 +191,7 @@ sit_exit_locked
 - 踢球视觉参数。
 - 跳跃推送、飞行、落地、恢复时间。
 - 坐下直出电机输出。
-- 低电 BOOT 禁止和坐下后禁止退出逻辑。
+- 低电 BOOT 禁止和坐下后禁止退出逻辑；电量恢复后自动解除坐下退出锁。
 - `controller.cpp` 到 `balance_core` 的请求翻译。
 
 需要注意的是，框架现在明确采用“当前 action 先生成本周期输出，transition 再影响下一周期”的模型。这个模型保留了原先 KICK 切换时“本周期仍使用 kick base command”的行为。
