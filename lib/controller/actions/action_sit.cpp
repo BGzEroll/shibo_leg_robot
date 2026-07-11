@@ -1,7 +1,6 @@
 #include "action_sit.h"
 
 #include "controller.h"
-#include "sts3032.h"
 
 static constexpr int16_t SERVO_MIDDLE_COUNT = 2048;
 static constexpr int16_t SIT_MIDDLE_READY_ERROR = 50;
@@ -16,13 +15,14 @@ static controller::actions::action_runtime sit_runtime;
 /**
  * @brief 判断左右腿舵机当前位置是否已经接近中位
  *
+ * @param ctx 动作输入输出上下文
+ *
  * @return 左右腿舵机都接近中位时返回 true
  */
-static bool servo_middle_ready()
+static bool servo_middle_ready(const controller::action_io &ctx)
 {
-    sts3032::get_position_and_load();
-    int16_t left_error = abs(sts3032::status[0].position - SERVO_MIDDLE_COUNT);
-    int16_t right_error = abs(sts3032::status[1].position - SERVO_MIDDLE_COUNT);
+    int16_t left_error = abs(ctx.feedback.left_leg_position - SERVO_MIDDLE_COUNT);
+    int16_t right_error = abs(ctx.feedback.right_leg_position - SERVO_MIDDLE_COUNT);
     return left_error <= SIT_MIDDLE_READY_ERROR && right_error <= SIT_MIDDLE_READY_ERROR;
 }
 
@@ -72,7 +72,12 @@ static controller::action_result update_sit_flow(controller::actions::action_run
         case controller::actions::PREPARE:
             result.balance.mode = controller::balance_drive_mode::BALANCE;
             result.balance.enable_steering = true;
-            controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+            controller::actions::set_pose(
+                ctx,
+                controller::robot_model::SERVO_LEFT_MIN,
+                controller::robot_model::SERVO_RIGHT_MIN,
+                450,
+                250);
             runtime.timer = 0;
             runtime.phase = controller::actions::INIT_PREPARE;
             break;
@@ -80,10 +85,10 @@ static controller::action_result update_sit_flow(controller::actions::action_run
         case controller::actions::INIT_PREPARE:
             result.balance.mode = controller::balance_drive_mode::BALANCE;
             result.balance.enable_steering = true;
-            if(servo_middle_ready())
+            if(servo_middle_ready(ctx))
             {
                 runtime.timer = 0;
-                controller::actions::set_torque(2);
+                controller::actions::set_torque(ctx, 2);
                 set_sit_direct_output(result.balance);
                 runtime.phase = controller::actions::MOVING;
             }
@@ -107,12 +112,12 @@ static controller::action_result update_sit_flow(controller::actions::action_run
                 runtime.timer += tick_ms;
                 if(runtime.timer >= MIDDLE_CALIBRATION_TORQUE_OFF_MS && runtime.ready_timer == 0)
                 {
-                    controller::actions::set_torque(0);
+                    controller::actions::set_torque(ctx, 0);
                     runtime.ready_timer = 1;
                 }
                 if(runtime.timer >= MIDDLE_CALIBRATION_RUN_MS && runtime.elapsed == 0)
                 {
-                    sts3032::calibrate_middle();
+                    ctx.actuator.calibrate_middle = true;
                     runtime.elapsed = 1;
                 }
                 if(runtime.timer >= MIDDLE_CALIBRATION_SUCCESS_MS && runtime.elapsed == 1)
@@ -123,12 +128,17 @@ static controller::action_result update_sit_flow(controller::actions::action_run
             }
             else if((runtime.timer += tick_ms) >= 10000 || ctx.input.disable_leg_torque)
             {
-                controller::actions::set_torque(0);
+                controller::actions::set_torque(ctx, 0);
                 runtime.timer = 10000;
             }
             if(ctx.input.exit_action && !ctx.sit_exit_locked)
             {
-                controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+                controller::actions::set_pose(
+                    ctx,
+                    controller::robot_model::SERVO_LEFT_MIN,
+                    controller::robot_model::SERVO_RIGHT_MIN,
+                    450,
+                    250);
                 controller::actions::reset_leg(ctx.leg);
                 runtime.phase = controller::actions::EXIT_PREPARE;
             }

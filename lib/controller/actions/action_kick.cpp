@@ -1,7 +1,6 @@
 #include "action_kick.h"
 
 #include "host_comm.h"
-#include "ptk7350.h"
 
 static constexpr float CAM_INITIAL_ANGLE = 45.0f;
 static constexpr float CAM_LOST_ANGLE = 45.0f;
@@ -70,19 +69,27 @@ class kick_action_base : public controller::actions::action
         }
 
     protected:
-        void set_camera(float angle)
+        void set_camera(controller::action_io &ctx, float angle)
         {
-            kick.cam_angle = constrain(angle, (float)CAMSERVO_MIN, (float)CAMSERVO_MAX);
-            ptk7350::cam_servo.set_angle((uint16_t)kick.cam_angle);
+            kick.cam_angle = constrain(
+                angle,
+                (float)controller::robot_model::CAMERA_SERVO_MIN,
+                (float)controller::robot_model::CAMERA_SERVO_MAX);
+            ctx.actuator.accessory.camera_valid = true;
+            ctx.actuator.accessory.camera_angle = (uint16_t)kick.cam_angle;
         }
 
-        void set_frontier(uint16_t angle)
+        void set_frontier(controller::action_io &ctx, uint16_t angle)
         {
-            angle = constrain(angle, (uint16_t)FRONTIERSERVO_MIN, (uint16_t)FRONTIERSERVO_MAX);
+            angle = constrain(
+                angle,
+                controller::robot_model::FRONTIER_SERVO_MIN,
+                controller::robot_model::FRONTIER_SERVO_MAX);
             if(kick.frontier_angle == angle){return;}
 
             kick.frontier_angle = angle;
-            ptk7350::frontier_servo.set_angle(angle);
+            ctx.actuator.accessory.frontier_valid = true;
+            ctx.actuator.accessory.frontier_angle = angle;
         }
 
         controller::balance_request kick_base_command(controller::action_io &ctx)
@@ -109,7 +116,7 @@ class kick_action_base : public controller::actions::action
             return true;
         }
 
-        void aim_camera(int16_t dy)
+        void aim_camera(controller::action_io &ctx, int16_t dy)
         {
             if(abs((int32_t)dy) <= CAM_AIM_DEADBAND)
             {
@@ -135,7 +142,7 @@ class kick_action_base : public controller::actions::action
             kick.last_dy_time = now;
             kick.cam_error = (float)dy;
             kick.cam_rate = -pd_output;
-            set_camera(kick.cam_angle - pd_output);
+            set_camera(ctx, kick.cam_angle - pd_output);
         }
 
         float aim_yaw_rate(int16_t dx)
@@ -157,28 +164,28 @@ class kick_action_base : public controller::actions::action
             return fabsf(ctx.input.linear_cmd) > ctx.max_linear_vel * 0.05f;
         }
 
-        void reset_lost_target()
+        void reset_lost_target(controller::action_io &ctx)
         {
             kick.cam_error = 0.0f;
             kick.cam_rate = 0.0f;
             kick.yaw_rate = 0.0f;
             kick.last_dy = 0;
             kick.last_dy_time = 0;
-            set_camera(CAM_LOST_ANGLE);
-            set_frontier(FRONTIER_KICK_ANGLE);
+            set_camera(ctx, CAM_LOST_ANGLE);
+            set_frontier(ctx, FRONTIER_KICK_ANGLE);
         }
 
-        void ready_kick()
+        void ready_kick(controller::action_io &ctx)
         {
             if(!kick.kicking)
             {
-                set_frontier(FRONTIER_READY_ANGLE);
+                set_frontier(ctx, FRONTIER_READY_ANGLE);
             }
         }
 
-        void trigger_kick()
+        void trigger_kick(controller::action_io &ctx)
         {
-            set_frontier(FRONTIER_KICK_ANGLE);
+            set_frontier(ctx, FRONTIER_KICK_ANGLE);
             kick.kicking = true;
             kick.kick_timer = 0;
             kick.kick_cooldown_timer = KICK_COOLDOWN_MS;
@@ -214,9 +221,9 @@ class kick_action_base : public controller::actions::action
             kick.kick_cooldown_timer -= tick_ms;
         }
 
-        void begin_kick_exit()
+        void begin_kick_exit(controller::action_io &ctx)
         {
-            set_frontier(FRONTIER_KICK_ANGLE);
+            set_frontier(ctx, FRONTIER_KICK_ANGLE);
             kick.kicking = false;
             kick.kick_timer = 0;
             runtime.timer = 0;
@@ -238,7 +245,7 @@ class kick_action_base : public controller::actions::action
         {
             kick = kick_runtime{};
             kick.target_yaw = ctx.status.yaw_angle;
-            set_camera(CAM_INITIAL_ANGLE);
+            set_camera(ctx, CAM_INITIAL_ANGLE);
             runtime.phase = controller::actions::MOVING;
         }
 
@@ -264,7 +271,7 @@ class kick_place_action_impl : public kick_action_base
 
             if(ctx.input.request == controller::action_request::KICK_EXIT)
             {
-                begin_kick_exit();
+                begin_kick_exit(ctx);
                 return result;
             }
             if(runtime.phase != controller::actions::EXIT_PREPARE &&
@@ -282,21 +289,21 @@ class kick_place_action_impl : public kick_action_base
             host_comm::vision_measurement vision;
             if(!read_vision(vision))
             {
-                reset_lost_target();
+                reset_lost_target(ctx);
                 return result;
             }
 
-            if(consume_vision_step(vision)){aim_camera(vision.dy);}
+            if(consume_vision_step(vision)){aim_camera(ctx, vision.dy);}
             result.balance.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
             kick.yaw_rate = result.balance.yaw_rate;
 
             if(kick.cam_angle < (float)PLACE_BALL_S2 && vision.dy > PLACE_KICK_DY && vision.dy < KICK_DY_MAX)
             {
-                if(can_trigger_kick()){trigger_kick();}
+                if(can_trigger_kick()){trigger_kick(ctx);}
             }
             else
             {
-                ready_kick();
+                ready_kick(ctx);
             }
             return result;
         }
@@ -317,7 +324,7 @@ class kick_run_action_impl : public kick_action_base
 
             if(ctx.input.request == controller::action_request::KICK_EXIT)
             {
-                begin_kick_exit();
+                begin_kick_exit(ctx);
                 return result;
             }
             if(runtime.phase != controller::actions::EXIT_PREPARE &&
@@ -369,11 +376,11 @@ class kick_run_action_impl : public kick_action_base
             host_comm::vision_measurement vision;
             if(!read_vision(vision))
             {
-                reset_lost_target();
+                reset_lost_target(ctx);
                 return result;
             }
 
-            if(consume_vision_step(vision)){aim_camera(vision.dy);}
+            if(consume_vision_step(vision)){aim_camera(ctx, vision.dy);}
             result.balance.yaw_rate = combine_yaw_rate(ctx, aim_yaw_rate(vision.dx));
             kick.yaw_rate = result.balance.yaw_rate;
 
@@ -381,7 +388,7 @@ class kick_run_action_impl : public kick_action_base
             {
                 if(can_trigger_kick())
                 {
-                    trigger_kick();
+                    trigger_kick(ctx);
                     kick.post_kick = true;
                 }
                 return result;
@@ -396,7 +403,7 @@ class kick_run_action_impl : public kick_action_base
             int16_t ob_y = OB_BALL_DY - vision.dy;
             float forward = constrain((float)ob_y * CHASE_LINEAR_KP, 0.0f, min(ctx.max_linear_vel, RUN_FORWARD_MAX));
             if(!manual_linear_active(ctx)){result.balance.linear_vel = forward;}
-            ready_kick();
+            ready_kick(ctx);
             return result;
         }
 };

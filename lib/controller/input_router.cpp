@@ -2,10 +2,8 @@
 
 #include "actions.h"
 #include "esp_timer.h"
-#include "esp_http_server.h"
-#include "host_comm.h"
+#include "input_provider.h"
 #include "xbox.h"
-#include "xbox_dev.h"
 
 /* ---- 输入路由运行状态 ---- */
 
@@ -25,6 +23,8 @@ struct input_snapshot
 static controller::input_source last_source = controller::input_source::NONE;
 static uint16_t last_buttons = 0;
 static bool last_fresh = false;
+static controller::input_provider *const *providers = nullptr;
+static uint8_t provider_count = 0;
 
 /* ---- 输入采样与归一化 ---- */
 
@@ -67,42 +67,20 @@ static input_snapshot read_snapshot()
     input_snapshot snapshot;
     uint32_t now_us = (uint32_t)esp_timer_get_time();
 
-    if(xbox_dev::connected())
+    for(uint8_t i = 0; i < provider_count; i++)
     {
-        snapshot.source = controller::input_source::XBOX;
+        controller::input_provider *provider = providers[i];
+        if(!provider || !provider->claims_control(now_us)){continue;}
 
-        xbox_dev::data data;
-        if(xbox_dev::queue() && xQueuePeek(xbox_dev::queue(), &data, 0) == pdTRUE)
+        snapshot.source = provider->source();
+        controller::input_sample data;
+        if(provider->latest(data))
         {
             snapshot.timestamp_us = data.timestamp_us;
             snapshot.buttons = data.buttons;
             memcpy(snapshot.axes, data.axes, sizeof(snapshot.axes));
         }
-    }
-    else
-    {
-        esp_http_server::remote_input_data web_data;
-        QueueHandle_t remote_queue = esp_http_server::remote_queue();
-        if(remote_queue &&
-           xQueuePeek(remote_queue, &web_data, 0) == pdTRUE &&
-           input_fresh(web_data.timestamp_us, now_us))
-        {
-            snapshot.source = controller::input_source::WEB;
-            snapshot.timestamp_us = web_data.timestamp_us;
-            snapshot.buttons = web_data.buttons;
-            memcpy(snapshot.axes, web_data.axes, sizeof(snapshot.axes));
-            snapshot.fresh = true;
-            return snapshot;
-        }
-
-        snapshot.source = controller::input_source::HOST;
-        host_comm::remote_data data;
-        if(host_comm::remote_queue() && xQueuePeek(host_comm::remote_queue(), &data, 0) == pdTRUE)
-        {
-            snapshot.timestamp_us = data.timestamp_us;
-            snapshot.buttons = data.buttons;
-            memcpy(snapshot.axes, data.axes, sizeof(snapshot.axes));
-        }
+        break;
     }
 
     snapshot.fresh = input_fresh(snapshot.timestamp_us, now_us);
@@ -296,6 +274,19 @@ void controller::input_router::update(controller::mode_id mode, float max_linear
     if(held_buttons == xbox::BUTTON_DOWN){out.leg_height_direction = 1;}
 
     route_action_request(mode, held_buttons, pressed_buttons, max_linear_vel, out);
+}
+
+/**
+ * @brief 配置参与输入仲裁的输入源列表
+ *
+ * @param configured_providers 按优先级排列的输入源列表
+ * @param count 输入源数量
+ */
+void controller::input_router::configure(controller::input_provider *const *configured_providers,
+    uint8_t count)
+{
+    providers = configured_providers;
+    provider_count = count;
 }
 
 /**

@@ -1,9 +1,6 @@
 #include "actions.h"
 
 #include "actions/action_common.h"
-#include "actions/action_jump.h"
-#include "actions/action_kick.h"
-#include "actions/action_sit.h"
 
 /* ---- 基础动作对象 ---- */
 
@@ -28,7 +25,7 @@ class boot_action_impl : public controller::actions::action
             switch(runtime.phase)
             {
                 case controller::actions::PREPARE:
-                    controller::actions::set_torque(0);
+                    controller::actions::set_torque(ctx, 0);
                     runtime.phase = controller::actions::WAIT_SIGNAL;
                     break;
 
@@ -42,7 +39,12 @@ class boot_action_impl : public controller::actions::action
                     break;
 
                 case controller::actions::INIT:
-                    controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+                    controller::actions::set_pose(
+                        ctx,
+                        controller::robot_model::SERVO_LEFT_MIN,
+                        controller::robot_model::SERVO_RIGHT_MIN,
+                        450,
+                        250);
                     controller::actions::reset_leg(ctx.leg);
                     runtime.phase = controller::actions::INIT_PREPARE;
                     break;
@@ -149,6 +151,8 @@ class stop_action_impl : public controller::actions::action
 static boot_action_impl boot_action_instance;
 static balance_action_impl balance_action_instance;
 static stop_action_impl stop_action_instance;
+static controller::actions::action *const *registered_actions = nullptr;
+static uint8_t registered_action_count = 0;
 
 /* ---- 动作调度内部流程 ---- */
 
@@ -161,33 +165,12 @@ static stop_action_impl stop_action_instance;
  */
 static controller::actions::action &action_for_mode(controller::mode_id mode)
 {
-    switch(mode)
+    for(uint8_t i = 0; i < registered_action_count; i++)
     {
-        case controller::mode_id::BOOT:
-            return boot_action_instance;
-
-        case controller::mode_id::BALANCE:
-            return balance_action_instance;
-
-        case controller::mode_id::SIT:
-            return controller::actions::sit_action();
-
-        case controller::mode_id::JUMP:
-            return controller::actions::jump_action();
-
-        case controller::mode_id::KICK_PLACE:
-            return controller::actions::kick_place_action();
-
-        case controller::mode_id::KICK_RUN:
-            return controller::actions::kick_run_action();
-
-        case controller::mode_id::MIDDLE_CALIBRATION:
-            return controller::actions::middle_calibration_action();
-
-        case controller::mode_id::STOP:
-        default:
-            return stop_action_instance;
+        controller::actions::action *candidate = registered_actions[i];
+        if(candidate && candidate->mode() == mode){return *candidate;}
     }
+    return stop_action_instance;
 }
 
 /**
@@ -396,6 +379,48 @@ static void apply_transition(controller::action_state &state, controller::action
 /* ---- 动作调度 API ---- */
 
 /**
+ * @brief 获取 BOOT 动作对象
+ *
+ * @return BOOT 动作对象
+ */
+controller::actions::action &controller::actions::boot_action()
+{
+    return boot_action_instance;
+}
+
+/**
+ * @brief 获取 BALANCE 动作对象
+ *
+ * @return BALANCE 动作对象
+ */
+controller::actions::action &controller::actions::balance_action()
+{
+    return balance_action_instance;
+}
+
+/**
+ * @brief 获取 STOP 动作对象
+ *
+ * @return STOP 动作对象
+ */
+controller::actions::action &controller::actions::stop_action()
+{
+    return stop_action_instance;
+}
+
+/**
+ * @brief 配置当前机器人启用的动作对象
+ *
+ * @param actions 动作对象列表
+ * @param count 动作对象数量
+ */
+void controller::actions::configure(controller::actions::action *const *actions, uint8_t count)
+{
+    registered_actions = actions;
+    registered_action_count = count;
+}
+
+/**
  * @brief 初始化动作调度状态
  *
  * @param state 动作调度状态
@@ -403,7 +428,7 @@ static void apply_transition(controller::action_state &state, controller::action
 void controller::actions_init(controller::action_state &state)
 {
     state.mode = controller::mode_id::BOOT;
-    state.current = &boot_action_instance;
+    state.current = &action_for_mode(controller::mode_id::BOOT);
     state.sit_exit_locked = false;
 }
 

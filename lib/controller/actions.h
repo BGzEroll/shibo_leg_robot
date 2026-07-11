@@ -3,9 +3,10 @@
 
 #include <Arduino.h>
 #include "SimpleFOC.h"
-#include "balance_core.h"
+#include "actuator_intent.h"
 #include "control_input.h"
-#include "sts3032.h"
+#include "motion_port.h"
+#include "robot_model.h"
 
 namespace controller
 {
@@ -35,14 +36,6 @@ namespace controller
         TURN_RIGHT
     };
 
-    enum class balance_drive_mode : uint8_t
-    {
-        STOP = 0,
-        BALANCE,
-        DIRECT_OUTPUT,
-        RECOVER
-    };
-
     struct leg_runtime
     {
         void reset_roll_pid()
@@ -51,32 +44,18 @@ namespace controller
         }
 
         float roll_adjust = 0.0f;
-        float height_base = (float)LEG_HEIGHT_BASE;
+        float height_base = controller::robot_model::LEG_HEIGHT_BASE;
         PIDController roll_pid{8.0f, 30.0f, 0.0f, 100000.0f, 450.0f};
         LowPassFilter roll_lpf{0.3f};
-    };
-
-    struct balance_request
-    {
-        balance_drive_mode mode = balance_drive_mode::STOP;
-        bool enable_steering = false;
-        bool reset_reference = false;
-        bool reset_yaw_integral = false;
-        float linear_vel = 0.0f;
-        float yaw_rate = 0.0f;
-        float direct_left = 0.0f;
-        float direct_right = 0.0f;
-        float recover_blend = 1.0f;
-        bool enable_linear_feedback = true;
-        bool enable_yaw_feedback = true;
-        bool enable_yaw_integral = true;
     };
 
     struct action_io
     {
         control_input &input;
-        balance_core::motion_status &status;
+        motion_status &status;
         leg_runtime &leg;
+        actuator_intent &actuator;
+        const actuator_feedback &feedback;
         float max_linear_vel;
         float max_steer_vel;
         bool battery_valid;
@@ -141,6 +120,11 @@ namespace controller
                 virtual action_result update(action_io &ctx, uint32_t tick_ms) = 0;
                 virtual void exit(action_io &ctx, mode_id next) = 0;
         };
+
+        action &boot_action();
+        action &balance_action();
+        action &stop_action();
+        void configure(action *const *registered_actions, uint8_t count);
     }
 
     void actions_init(action_state &state);

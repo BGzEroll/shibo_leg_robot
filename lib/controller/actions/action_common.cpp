@@ -1,7 +1,5 @@
 #include "action_common.h"
 
-#include "sts3032.h"
-
 static constexpr float LEG_HEIGHT_BASE_MIN = -10.0f;
 static constexpr float LEG_HEIGHT_BASE_MAX = 52.0f;
 
@@ -37,27 +35,32 @@ float controller::actions::angle_error(float target, float current)
 /**
  * @brief 设置左右腿舵机目标姿态并触发同步移动
  *
+ * @param ctx 动作输入输出上下文
  * @param left 左侧目标位置
  * @param right 右侧目标位置
  * @param speed 舵机速度
  * @param accel 舵机加速度
  */
-void controller::actions::set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel)
+void controller::actions::set_pose(action_io &ctx, int16_t left, int16_t right,
+    uint16_t speed, uint8_t accel)
 {
-    sts3032::set(SERVO_LEFT, left, speed, accel);
-    sts3032::set(SERVO_RIGHT, right, speed, accel);
-    sts3032::move();
+    ctx.actuator.leg_pose.valid = true;
+    ctx.actuator.leg_pose.left = left;
+    ctx.actuator.leg_pose.right = right;
+    ctx.actuator.leg_pose.speed = speed;
+    ctx.actuator.leg_pose.accel = accel;
 }
 
 /**
  * @brief 设置左右腿舵机扭矩模式
  *
+ * @param ctx 动作输入输出上下文
  * @param type 扭矩模式类型
  */
-void controller::actions::set_torque(uint8_t type)
+void controller::actions::set_torque(action_io &ctx, uint8_t type)
 {
-    sts3032::set_torque_switch(SERVO_LEFT, type);
-    sts3032::set_torque_switch(SERVO_RIGHT, type);
+    ctx.actuator.leg_torque.valid = true;
+    ctx.actuator.leg_torque.type = type;
 }
 
 /* ---- 腿部与恢复控制 ---- */
@@ -70,7 +73,7 @@ void controller::actions::set_torque(uint8_t type)
 void controller::actions::reset_leg(leg_runtime &leg)
 {
     leg.roll_adjust = 0.0f;
-    leg.height_base = (float)LEG_HEIGHT_BASE;
+    leg.height_base = controller::robot_model::LEG_HEIGHT_BASE;
     leg.reset_roll_pid();
 }
 
@@ -93,9 +96,15 @@ void controller::actions::run_leg_control(action_io &ctx, float height_count_off
     left = (int16_t)((float)left + height_count_offset);
     right = (int16_t)((float)right - height_count_offset);
 
-    left = constrain(left, SERVO_LEFT_MIN, SERVO_LEFT_MAX - 100);
-    right = constrain(right, SERVO_RIGHT_MAX + 100, SERVO_RIGHT_MIN);
-    set_pose(left, right, 1000, 0);
+    left = constrain(
+        left,
+        controller::robot_model::SERVO_LEFT_MIN,
+        controller::robot_model::SERVO_LEFT_MAX - 100);
+    right = constrain(
+        right,
+        controller::robot_model::SERVO_RIGHT_MAX + 100,
+        controller::robot_model::SERVO_RIGHT_MIN);
+    set_pose(ctx, left, right, 1000, 0);
 }
 
 /**
@@ -111,7 +120,7 @@ void controller::actions::run_leg_control(action_io &ctx, float height_count_off
  *
  * @return 已经可以退出恢复阶段时返回 true
  */
-bool controller::actions::recover_ready(action_runtime &runtime, const balance_core::motion_status &status, uint32_t tick_ms,
+bool controller::actions::recover_ready(action_runtime &runtime, const motion_status &status, uint32_t tick_ms,
     float pitch_limit, float rate_limit, uint32_t hold_ms, uint32_t timeout_ms)
 {
     runtime.elapsed += tick_ms;
@@ -151,13 +160,15 @@ controller::balance_request controller::actions::recover_command(action_runtime 
  * @brief 按姿态序列推进舵机动作
  *
  * @param state 动作状态机状态
+ * @param ctx 动作输入输出上下文
  * @param steps 姿态步骤列表
  * @param count 姿态步骤数量
  * @param tick_ms 本次更新周期，单位毫秒
  *
  * @return 姿态序列执行完成时返回 true
  */
-bool controller::actions::run_pose_sequence(action_runtime &runtime, const pose_step *steps, uint8_t count, uint32_t tick_ms)
+bool controller::actions::run_pose_sequence(action_runtime &runtime, action_io &ctx,
+    const pose_step *steps, uint8_t count, uint32_t tick_ms)
 {
     if(steps == nullptr || count == 0){return true;}
     if(runtime.phase >= count){return true;}
@@ -165,7 +176,7 @@ bool controller::actions::run_pose_sequence(action_runtime &runtime, const pose_
     const pose_step &step = steps[runtime.phase];
     if(runtime.timer == 0)
     {
-        set_pose(step.left, step.right, step.speed, step.accel);
+        set_pose(ctx, step.left, step.right, step.speed, step.accel);
     }
 
     runtime.timer += tick_ms;

@@ -1,29 +1,29 @@
 #include "start.h"
 
+#include "robot_profile.h"
 #include <Arduino.h>
 #include "freertos/task.h"
-#include "battery.h"
-#include "balance_core.h"
-#include "controller.h"
-#include "host_comm.h"
-#include "led_dev.h"
-#include "rgb_dev.h"
-#include "xbox_dev.h"
-#include "esp_http_server.h"
 
 /**
  * @brief 创建系统中的 RTOS 任务
  */
 static void task_list()
 {
-    xTaskCreatePinnedToCore(battery::task_entry, "battery_task", 2048, nullptr, 2, nullptr, 0);
-    xTaskCreatePinnedToCore(led_dev::task_entry, "led_dev_task", 1024, nullptr, 2, nullptr, 0);
-    xTaskCreatePinnedToCore(rgb_dev::task_entry, "rgb_dev_task", 2048, nullptr, 2, nullptr, 0);
-    xTaskCreatePinnedToCore(xbox_dev::task_entry, "xbox_dev_task", 4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(balance_core::core_task_entry, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(balance_core::control_task_entry, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
-    xTaskCreatePinnedToCore(host_comm::task_entry, "host_comm_task", 4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(esp_http_server::task_entry, "http_server_task", 4096, nullptr, 2, nullptr, 0);
+    uint8_t count = 0;
+    const application::task_descriptor *tasks = application::task_list(count);
+    for(uint8_t i = 0; i < count; i++)
+    {
+        const application::task_descriptor &task = tasks[i];
+        BaseType_t result = xTaskCreatePinnedToCore(
+            task.entry,
+            task.name,
+            task.stack_size,
+            nullptr,
+            task.priority,
+            nullptr,
+            task.core_id);
+        configASSERT(result == pdPASS);
+    }
 }
 
 /**
@@ -33,12 +33,7 @@ void start_init_all()
 {
     delay(1000);
 
-    battery::init();
-    led_dev::init();
-    rgb_dev::init();
-    xbox_dev::init();
-    esp_http_server::init();
-    controller::init();
+    application::init();
 
     task_list();
 }
