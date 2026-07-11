@@ -93,7 +93,7 @@ balance_core::core_task_entry()
     -> motor::left/right.loopFOC()
     -> motor::left/right.move()
     -> motor::encoder_queue()
-    -> mpu6050_dev::queue()
+    -> mpu6050_dev::latest()
 ```
 
 ## 上层请求边界

@@ -383,9 +383,10 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     sensor.leg_height[1] = servo_count_to_height(sensor.servo_position[1]);
     sensor.avg_leg_height = (sensor.leg_height[0] + sensor.leg_height[1]) * 0.5f;
 
-    mpu6050_dev::data imu_data;
-    if(mpu6050_dev::queue() && xQueuePeek(mpu6050_dev::queue(), &imu_data, 0) == pdTRUE)
+    foundation::timed_snapshot<mpu6050_dev::data> imu_snapshot;
+    if(mpu6050_dev::latest(imu_snapshot))
     {
+        const mpu6050_dev::data &imu_data = imu_snapshot.value;
         sensor.imu_valid = true;
         sensor.feedback.pitch_angle = imu_data.angle[1];
         sensor.feedback.pitch_rate = imu_data.gyro[1];
@@ -742,7 +743,6 @@ void balance_core::core_task_entry(void *arg)
             mpu6050_dev::imu.update();
 
             mpu6050_dev::data imu;
-            imu.timestamp_us = now_us;
             imu.temperature = mpu6050_dev::imu.temperature;
             for(uint8_t i = 0; i < 3; i++)
             {
@@ -750,10 +750,7 @@ void balance_core::core_task_entry(void *arg)
                 imu.gyro[i] = mpu6050_dev::imu.gyro[i];
                 imu.angle[i] = mpu6050_dev::imu.angle[i];
             }
-            if(mpu6050_dev::queue())
-            {
-                xQueueOverwrite(mpu6050_dev::queue(), &imu);
-            }
+            mpu6050_dev::publish(imu, now_us);
         }
 
         taskYIELD();

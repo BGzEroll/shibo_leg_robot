@@ -257,3 +257,39 @@ balance_core::feedback_override
 6. 根据产品版本增加 `standard/debug/no_wifi` 等 profile。
 
 当前版本已经建立真实可替换边界，但没有为了“看起来统一”给所有设备、总线和服务建立共同基类。
+
+## 11. 最新值通道与时间快照
+
+本架构增加两个已接入 MPU6050 数据链路的基础模板：
+
+### `latest_channel<value_type>`
+
+位置：`lib/foundation/latest_channel.h`
+
+内部使用长度为 1 的 FreeRTOS 队列，统一提供：
+
+```text
+init()
+ready()
+publish()
+latest()
+```
+
+发布时覆盖旧值，读取时不阻塞，也不再向调用方暴露裸 `QueueHandle_t`。当前 `mpu6050_dev` 已使用该模板替代原来的全局队列句柄。
+
+### `timed_snapshot<value_type>`
+
+位置：`lib/foundation/timed_snapshot.h`
+
+快照包含：
+
+```text
+value
+timestamp_us
+sequence
+valid
+```
+
+并提供 `fresh(now_us, timeout_us)` 进行无符号时间回绕安全的新鲜度判断。
+
+MPU6050 设备模块现在通过 `publish(data, timestamp_us)` 发布带时间戳快照，通过 `latest(snapshot)` 读取。`balance_core` 只取得快照负载，现有姿态反馈行为保持不变；时间戳和序号已经可供下一阶段传感器超时保护使用，本轮暂未增加新的失联阈值或停机策略。

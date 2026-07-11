@@ -51,7 +51,7 @@ mpu6050_dev::imu
 balance_core::core_task_entry()
         |
         v
-mpu6050_dev::queue()
+mpu6050_dev::latest()
         |
         v
 balance_core::control_task_entry()
@@ -89,7 +89,7 @@ balance_core::control_task_entry()
 2. 从 `motor::target_queue()` 读最新 `motor::target_data`。
 3. 调用 `motor::left.move(target.left_torque)` 和 `motor::right.move(target.right_torque)`。
 4. 每 1000 us 读取 `motor::left/right` 的 shaft angle 和 velocity，发布到 `motor::encoder_queue()`。
-5. 每 5000 us 调用 `mpu6050_dev::imu.update()`，发布姿态、角速度、加速度到 `mpu6050_dev::queue()`。
+5. 每 5000 us 调用 `mpu6050_dev::imu.update()`，将姿态、角速度和加速度发布为带时间戳的最新快照。
 6. `taskYIELD()` 让出调度。
 
 这里不运行模式逻辑、不运行 LQI、不读取摇杆输入。它只做尽可能短的硬件 IO。
@@ -155,7 +155,7 @@ balance_core::set_command(request.command);
 1. 读取 `controller::update()` 刚写入的内部请求状态。
 2. `read_sensor()` 组装内部传感快照：
    - 每 20 ms 调 `sts3032::get_position_and_load()` 更新腿部位置。
-   - 从 `mpu6050_dev::queue()` 读 IMU 快照。
+   - 通过 `mpu6050_dev::latest()` 读取 IMU 时间快照。
    - 从 `motor::encoder_queue()` 读 encoder 快照。
    - 用 `servo_count_to_height()` 把舵机位置转换成腿长。
 3. `update_state()` 把 IMU 和 encoder 快照写入 `balance_core` 内部 LQI 状态。
