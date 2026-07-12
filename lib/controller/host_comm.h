@@ -2,8 +2,8 @@
 #define HOST_COMM_H
 
 #include <Arduino.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
+#include "balance_core.h"
+#include "ports/latest_value.h"
 
 namespace host_comm
 {
@@ -23,8 +23,18 @@ namespace host_comm
         bool valid = false;
     };
 
-    QueueHandle_t remote_queue();
-    bool vision_latest(vision_measurement &out);
+    struct input_ports
+    {
+        port::latest_reader<balance_core::debug_snapshot> debug_status;
+    };
+
+    struct output_ports
+    {
+        port::latest_writer<remote_data> remote_control;
+        port::latest_writer<vision_measurement> vision;
+    };
+
+    void init(const input_ports &inputs, const output_ports &outputs);
     void task_entry(void *arg);
 }
 

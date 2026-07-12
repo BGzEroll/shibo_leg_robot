@@ -1,9 +1,8 @@
 #include "action_common.h"
 
-#include "sts3032.h"
-
 static constexpr float LEG_HEIGHT_BASE_MIN = -10.0f;
 static constexpr float LEG_HEIGHT_BASE_MAX = 52.0f;
+static actuator_port::services actuator_services;
 
 /* ---- 基础动作工具 ---- */
 
@@ -35,6 +34,16 @@ float controller::actions::angle_error(float target, float current)
 }
 
 /**
+ * @brief 绑定动作模块使用的同步执行端口
+ *
+ * @param actuators 同步执行端口
+ */
+void controller::actions::bind_actuators(const actuator_port::services &actuators)
+{
+    actuator_services = actuators;
+}
+
+/**
  * @brief 设置左右腿舵机目标姿态并触发同步移动
  *
  * @param left 左侧目标位置
@@ -44,9 +53,10 @@ float controller::actions::angle_error(float target, float current)
  */
 void controller::actions::set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel)
 {
-    sts3032::set(SERVO_LEFT, left, speed, accel);
-    sts3032::set(SERVO_RIGHT, right, speed, accel);
-    sts3032::move();
+    if(actuator_services.set_leg_pose)
+    {
+        actuator_services.set_leg_pose(left, right, speed, accel);
+    }
 }
 
 /**
@@ -56,8 +66,35 @@ void controller::actions::set_pose(int16_t left, int16_t right, uint16_t speed, 
  */
 void controller::actions::set_torque(uint8_t type)
 {
-    sts3032::set_torque_switch(SERVO_LEFT, type);
-    sts3032::set_torque_switch(SERVO_RIGHT, type);
+    if(actuator_services.set_leg_torque){actuator_services.set_leg_torque(type);}
+}
+
+/**
+ * @brief 执行左右腿中位校准
+ */
+void controller::actions::calibrate_leg_middle()
+{
+    if(actuator_services.calibrate_leg_middle){actuator_services.calibrate_leg_middle();}
+}
+
+/**
+ * @brief 设置摄像头舵机角度
+ *
+ * @param angle 舵机角度
+ */
+void controller::actions::set_camera_angle(uint16_t angle)
+{
+    if(actuator_services.set_camera_angle){actuator_services.set_camera_angle(angle);}
+}
+
+/**
+ * @brief 设置前挡板舵机角度
+ *
+ * @param angle 舵机角度
+ */
+void controller::actions::set_frontier_angle(uint16_t angle)
+{
+    if(actuator_services.set_frontier_angle){actuator_services.set_frontier_angle(angle);}
 }
 
 /* ---- 腿部与恢复控制 ---- */
@@ -70,7 +107,7 @@ void controller::actions::set_torque(uint8_t type)
 void controller::actions::reset_leg(leg_runtime &leg)
 {
     leg.roll_adjust = 0.0f;
-    leg.height_base = (float)LEG_HEIGHT_BASE;
+    leg.height_base = leg_contract::HEIGHT_BASE;
     leg.reset_roll_pid();
 }
 
@@ -93,8 +130,8 @@ void controller::actions::run_leg_control(action_io &ctx, float height_count_off
     left = (int16_t)((float)left + height_count_offset);
     right = (int16_t)((float)right - height_count_offset);
 
-    left = constrain(left, SERVO_LEFT_MIN, SERVO_LEFT_MAX - 100);
-    right = constrain(right, SERVO_RIGHT_MAX + 100, SERVO_RIGHT_MIN);
+    left = constrain(left, leg_contract::LEFT_MIN, leg_contract::LEFT_MAX - 100);
+    right = constrain(right, leg_contract::RIGHT_MAX + 100, leg_contract::RIGHT_MIN);
     set_pose(left, right, 1000, 0);
 }
 

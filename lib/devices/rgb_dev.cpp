@@ -1,6 +1,5 @@
 #include "rgb_dev.h"
 
-#include "battery.h"
 #include "FastLED.h"
 #include "freertos/task.h"
 
@@ -14,6 +13,7 @@ static constexpr uint32_t DOUBLE_FLASH_PERIOD_MS = 1000;
 
 static CRGB rgb_leds[RGB_LED_COUNT];
 static bool red_enabled = false;
+static rgb_dev::input_ports module_inputs;
 
 /* ---- 低电双闪内部流程 ---- */
 
@@ -25,11 +25,7 @@ static bool red_enabled = false;
 static bool battery_low()
 {
     battery::data data;
-    if(!battery::queue() ||
-       xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
-    {
-        return false;
-    }
+    if(!module_inputs.battery_status.read(data)){return false;}
     return data.valid && data.low;
 }
 
@@ -66,10 +62,13 @@ static bool red_phase_active(uint32_t phase_ms)
 /* ---- rgb_dev 公共 API ---- */
 
 /**
- * @brief 初始化两颗 WS2812 RGB 灯
+ * @brief 初始化两颗 WS2812 RGB 灯及端口
+ *
+ * @param inputs RGB 输入端口
  */
-void rgb_dev::init()
+void rgb_dev::init(const rgb_dev::input_ports &inputs)
 {
+    module_inputs = inputs;
     FastLED.addLeds<WS2812, RGB_PIN, GRB>(rgb_leds, RGB_LED_COUNT);
     FastLED.setBrightness(RGB_GLOBAL_BRIGHTNESS);
     fill_solid(rgb_leds, RGB_LED_COUNT, CRGB::Black);

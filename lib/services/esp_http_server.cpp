@@ -1,6 +1,5 @@
 #include "esp_http_server.h"
 
-#include "controller.h"
 #include "esp_timer.h"
 #include "wifi_dev.h"
 #include "xbox_dev.h"
@@ -17,8 +16,10 @@ static constexpr uint32_t REMOTE_LEASE_TIMEOUT_MS = 500;
 static constexpr uint8_t BLE_SCAN_MAX = 24;
 
 static WebServer server(80);
-static QueueHandle_t remote_input_queue = nullptr;
+static esp_http_server::input_ports module_inputs;
+static esp_http_server::output_ports module_outputs;
 static bool server_started = false;
+static uint32_t calibration_sequence = 0;
 static uint32_t remote_lease_id = 0;
 static uint32_t remote_lease_timestamp_ms = 0;
 static constexpr const char *REMOTE_AXIS_ARGS[6] = {"a0", "a1", "a2", "a3", "a4", "a5"};
@@ -655,10 +656,8 @@ static bool remote_lease_available(uint32_t session_id, uint32_t now_ms)
  */
 static void clear_remote_input()
 {
-    if(!remote_input_queue){return;}
-
     esp_http_server::remote_input_data data;
-    xQueueOverwrite(remote_input_queue, &data);
+    module_outputs.remote_control.publish(data);
 }
 
 /**
@@ -843,7 +842,9 @@ static void handle_servo_middle_calibration()
         return;
     }
 
-    controller::request_middle_calibration();
+    esp_http_server::calibration_request request;
+    request.sequence = ++calibration_sequence;
+    module_outputs.calibration.publish(request);
     server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -853,7 +854,10 @@ static void handle_servo_middle_calibration()
 static void handle_servo_middle_calibration_status()
 {
     String json = "{\"ok\":true,\"success\":";
-    json += controller::middle_calibration_success() ? "true" : "false";
+    esp_http_server::calibration_status status;
+    bool success = module_inputs.calibration.read(status) &&
+        status.sequence == calibration_sequence && status.success;
+    json += success ? "true" : "false";
     json += '}';
     server.send(200, "application/json", json);
 }
@@ -903,7 +907,7 @@ static void handle_remote_input()
         return;
     }
 
-    if(!remote_input_queue)
+    if(!module_outputs.remote_control.connected())
     {
         server.send(503, "application/json",
             "{\"ok\":false,\"error\":\"遥控输入队列未初始化\"}");
@@ -923,34 +927,25 @@ static void handle_remote_input()
 
     remote_lease_id = session_id;
     remote_lease_timestamp_ms = now_ms;
-    xQueueOverwrite(remote_input_queue, &data);
+    module_outputs.remote_control.publish(data);
     server.send(204, "text/plain", "");
 }
 
 /* ---- esp_http_server 公共 API ---- */
 
 /**
- * @brief 获取手机网页遥控输入队列
+ * @brief 初始化 HTTP 服务、端口并注册路由
  *
- * @return 队列句柄
+ * @param inputs HTTP 服务输入端口
+ * @param outputs HTTP 服务输出端口
  */
-QueueHandle_t esp_http_server::remote_queue()
-{
-    return remote_input_queue;
-}
-
-/**
- * @brief 初始化 HTTP 服务并注册路由
- */
-void esp_http_server::init()
+void esp_http_server::init(const esp_http_server::input_ports &inputs,
+    const esp_http_server::output_ports &outputs)
 {
     if(server_started){return;}
 
-    wifi_dev::init();
-    if(!remote_input_queue)
-    {
-        remote_input_queue = xQueueCreate(1, sizeof(esp_http_server::remote_input_data));
-    }
+    module_inputs = inputs;
+    module_outputs = outputs;
     clear_remote_lease();
 
     server.on("/", HTTP_GET, handle_root);

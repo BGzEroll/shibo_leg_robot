@@ -2,6 +2,7 @@
 #define MPU6050_DEV_H
 
 #include "mpu6050.h"
+#include "ports/latest_value.h"
 
 namespace mpu6050_dev
 {
@@ -14,10 +15,15 @@ namespace mpu6050_dev
         float angle[3];
     };
 
+    struct output_ports
+    {
+        port::latest_writer<data> measurement;
+    };
+
     extern mpu6050 imu;
 
-    QueueHandle_t queue();
-    void init();
+    void publish(const data &measurement);
+    void init(const output_ports &outputs);
 }
 
 #endif

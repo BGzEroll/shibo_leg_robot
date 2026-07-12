@@ -4,24 +4,25 @@
 
 static i2c_bus imu_i2c(1);
 mpu6050 mpu6050_dev::imu(imu_i2c, 0x68, 0.02f);
-static QueueHandle_t mpu6050_data_queue = nullptr;
+static mpu6050_dev::output_ports module_outputs;
 
 /**
- * @brief 获取 MPU6050 数据队列
+ * @brief 发布最新 MPU6050 测量
  *
- * @return 队列句柄
+ * @param measurement MPU6050 测量
  */
-QueueHandle_t mpu6050_dev::queue()
+void mpu6050_dev::publish(const mpu6050_dev::data &measurement)
 {
-    return mpu6050_data_queue;
+    module_outputs.measurement.publish(measurement);
 }
 
 /**
  * @brief 初始化 MPU6050 设备模块
+ *
+ * @param outputs MPU6050 输出端口
  */
-void mpu6050_dev::init()
+void mpu6050_dev::init(const mpu6050_dev::output_ports &outputs)
 {
+    module_outputs = outputs;
     imu.init(true);
-
-    mpu6050_data_queue = xQueueCreate(1, sizeof(mpu6050_dev::data));
 }

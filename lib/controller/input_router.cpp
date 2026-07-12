@@ -2,10 +2,7 @@
 
 #include "actions.h"
 #include "esp_timer.h"
-#include "esp_http_server.h"
-#include "host_comm.h"
 #include "xbox.h"
-#include "xbox_dev.h"
 
 /* ---- 输入路由运行状态 ---- */
 
@@ -25,6 +22,7 @@ struct input_snapshot
 static controller::input_source last_source = controller::input_source::NONE;
 static uint16_t last_buttons = 0;
 static bool last_fresh = false;
+static controller::input_router::input_ports module_inputs;
 
 /* ---- 输入采样与归一化 ---- */
 
@@ -67,24 +65,19 @@ static input_snapshot read_snapshot()
     input_snapshot snapshot;
     uint32_t now_us = (uint32_t)esp_timer_get_time();
 
-    if(xbox_dev::connected())
+    xbox_dev::data xbox_data;
+    bool xbox_connected = module_inputs.xbox.read(xbox_data) && xbox_data.connected;
+    if(xbox_connected)
     {
         snapshot.source = controller::input_source::XBOX;
-
-        xbox_dev::data data;
-        if(xbox_dev::queue() && xQueuePeek(xbox_dev::queue(), &data, 0) == pdTRUE)
-        {
-            snapshot.timestamp_us = data.timestamp_us;
-            snapshot.buttons = data.buttons;
-            memcpy(snapshot.axes, data.axes, sizeof(snapshot.axes));
-        }
+        snapshot.timestamp_us = xbox_data.timestamp_us;
+        snapshot.buttons = xbox_data.buttons;
+        memcpy(snapshot.axes, xbox_data.axes, sizeof(snapshot.axes));
     }
     else
     {
         esp_http_server::remote_input_data web_data;
-        QueueHandle_t remote_queue = esp_http_server::remote_queue();
-        if(remote_queue &&
-           xQueuePeek(remote_queue, &web_data, 0) == pdTRUE &&
+        if(module_inputs.web.read(web_data) &&
            input_fresh(web_data.timestamp_us, now_us))
         {
             snapshot.source = controller::input_source::WEB;
@@ -97,7 +90,7 @@ static input_snapshot read_snapshot()
 
         snapshot.source = controller::input_source::HOST;
         host_comm::remote_data data;
-        if(host_comm::remote_queue() && xQueuePeek(host_comm::remote_queue(), &data, 0) == pdTRUE)
+        if(module_inputs.host.read(data))
         {
             snapshot.timestamp_us = data.timestamp_us;
             snapshot.buttons = data.buttons;
@@ -299,10 +292,13 @@ void controller::input_router::update(controller::mode_id mode, float max_linear
 }
 
 /**
- * @brief 初始化输入路由运行状态
+ * @brief 初始化输入路由端口和运行状态
+ *
+ * @param inputs 输入路由输入端口
  */
-void controller::input_router::init()
+void controller::input_router::init(const controller::input_router::input_ports &inputs)
 {
+    module_inputs = inputs;
     last_source = controller::input_source::NONE;
     last_buttons = 0;
     last_fresh = false;

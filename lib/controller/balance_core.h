@@ -2,6 +2,10 @@
 #define BALANCE_CORE_H
 
 #include <Arduino.h>
+#include "ports/latest_value.h"
+#include "ports/actuator_ports.h"
+#include "motor.h"
+#include "mpu6050_dev.h"
 
 namespace balance_core
 {
@@ -72,17 +76,33 @@ namespace balance_core
         float max_steer_vel = 0.0f;
     };
 
-    void apply_motion_control(const motion_control &control);
-    void apply_direct_output(const direct_output_control &control);
-    void apply_recover_control(const recover_control &control);
-    void apply_feedback_override(const feedback_override &override_control);
-    bool get_motion_status(motion_status &out);
-    bool get_debug_snapshot(debug_snapshot &out);
-    info get_info();
+    struct command
+    {
+        motion_control motion;
+        direct_output_control direct_output;
+        recover_control recover;
+        feedback_override feedback;
+    };
 
-    void init();
-    void core_task_entry(void *arg);
-    void control_task_entry(void *arg);
+    struct input_ports
+    {
+        port::latest_reader<command> control;
+        port::latest_reader<motor::encoder_data> encoder;
+        port::latest_reader<mpu6050_dev::data> imu;
+        port::latest_reader<actuator_port::leg_status> leg_status;
+    };
+
+    struct output_ports
+    {
+        port::latest_writer<motor::target_data> motor_target;
+        port::latest_writer<motion_status> motion;
+        port::latest_writer<debug_snapshot> debug;
+    };
+
+    info get_info();
+    void step(uint32_t tick_ms);
+
+    void init(const input_ports &inputs, const output_ports &outputs);
 }
 
 #endif

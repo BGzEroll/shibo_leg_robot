@@ -1,4 +1,6 @@
-# Controller 逻辑链路说明
+# Controller 逻辑链路说明（旧架构存档）
+
+> 本文记录端口架构重构前的调用链，已不对应当前源码。当前架构请查看 `reports/PORT_ARCHITECTURE_REPORT.md`。
 
 本文档说明 `lib/controller` 当前各模块、函数和 RTOS 任务之间如何连接。核心原则是：上层只表达意图，底层 `balance_core` 负责把意图和传感器状态变成电机目标。
 

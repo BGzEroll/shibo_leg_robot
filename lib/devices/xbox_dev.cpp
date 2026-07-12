@@ -18,7 +18,7 @@ static constexpr const char *XBOX_MANUFACTURER_NORMAL = "060000";
 static constexpr const char *XBOX_MANUFACTURER_SEARCHING = "0600030080";
 
 static xbox *gamepad = nullptr;
-static QueueHandle_t xbox_data_queue = nullptr;
+static port::latest_writer<xbox_dev::data> control_output;
 static volatile bool ble_scan_active = false;
 static String current_target_address;
 
@@ -31,15 +31,13 @@ static ble_scan_callbacks scan_callbacks;
 /* ---- BLE 连接内部流程 ---- */
 
 /**
- * @brief 清空 Xbox 输入队列状态
+ * @brief 清空 Xbox 输入状态
  */
 static void clear_input_state()
 {
-    if(!xbox_data_queue){return;}
-
     xbox_dev::data state = {};
     state.timestamp_us = (uint32_t)esp_timer_get_time();
-    xQueueOverwrite(xbox_data_queue, &state);
+    control_output.publish(state);
 }
 
 /**
@@ -156,16 +154,6 @@ static bool is_xbox_device(const NimBLEAdvertisedDevice *device)
 /* ---- xbox_dev 公共 API ---- */
 
 /**
- * @brief 获取 Xbox 输入数据队列
- *
- * @return 队列句柄
- */
-QueueHandle_t xbox_dev::queue()
-{
-    return xbox_data_queue;
-}
-
-/**
  * @brief 查询 Xbox 手柄是否已经连接
  *
  * @return 已连接时返回 true
@@ -252,12 +240,14 @@ bool xbox_dev::set_target_address(const String &address)
 }
 
 /**
- * @brief 初始化 Xbox 设备模块
+ * @brief 初始化 Xbox 输入模块
+ *
+ * @param outputs Xbox 输入模块输出端口
  */
-void xbox_dev::init()
+void xbox_dev::init(const xbox_dev::output_ports &outputs)
 {
+    control_output = outputs.control;
     current_target_address = load_target_address();
-    xbox_data_queue = xQueueCreate(1, sizeof(xbox_dev::data));
     rebuild_gamepad();
 }
 
@@ -284,11 +274,9 @@ void xbox_dev::task_entry(void *arg)
         state.timestamp_us = (uint32_t)esp_timer_get_time();
         state.buttons = gamepad->buttons;
         memcpy(state.axes, gamepad->axes, sizeof(gamepad->axes));
+        state.connected = gamepad->get_connection_state();
 
-        if(xbox_data_queue)
-        {
-            xQueueOverwrite(xbox_data_queue, &state);
-        }
+        control_output.publish(state);
 
         delay(20);
     }

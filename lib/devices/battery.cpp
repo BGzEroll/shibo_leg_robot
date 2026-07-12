@@ -19,7 +19,7 @@ static constexpr uint8_t NORMAL_CONFIRM_COUNT = 5;
 static constexpr uint8_t RECOVER_CONFIRM_COUNT = 10;
 static constexpr uint32_t SAMPLE_PERIOD_MS = 100;
 
-static QueueHandle_t battery_queue = nullptr;
+static port::latest_writer<battery::data> status_output;
 static esp_adc_cal_characteristics_t adc_characteristics;
 static battery::data current_data;
 static uint8_t low_confirm_count = 0;
@@ -122,30 +122,19 @@ static void update_status()
     current_data.voltage = read_voltage();
     update_low_state(current_data.voltage);
 
-    if(battery_queue)
-    {
-        xQueueOverwrite(battery_queue, &current_data);
-    }
+    status_output.publish(current_data);
 }
 
 /* ---- battery 公共 API ---- */
 
 /**
- * @brief 获取电池状态队列
+ * @brief 初始化电池 ADC 和状态输出端口
  *
- * @return 电池状态队列句柄
+ * @param outputs 电池模块输出端口
  */
-QueueHandle_t battery::queue()
+void battery::init(const battery::output_ports &outputs)
 {
-    return battery_queue;
-}
-
-/**
- * @brief 初始化电池 ADC 和状态队列
- */
-void battery::init()
-{
-    battery_queue = xQueueCreate(1, sizeof(battery::data));
+    status_output = outputs.status;
     adc1_config_width(BATTERY_ADC_WIDTH);
     adc1_config_channel_atten(BATTERY_ADC_CHANNEL, BATTERY_ADC_ATTEN);
     esp_adc_cal_characterize(

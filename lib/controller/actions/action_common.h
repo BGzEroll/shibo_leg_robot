@@ -18,8 +18,12 @@ namespace controller
 
         float wrap_pi(float angle);
         float angle_error(float target, float current);
+        void bind_actuators(const actuator_port::services &actuators);
         void set_pose(int16_t left, int16_t right, uint16_t speed, uint8_t accel);
         void set_torque(uint8_t type);
+        void calibrate_leg_middle();
+        void set_camera_angle(uint16_t angle);
+        void set_frontier_angle(uint16_t angle);
         void reset_leg(leg_runtime &leg);
         void run_leg_control(action_io &ctx, float height_count_offset = 0.0f);
         bool recover_ready(action_runtime &runtime, const balance_core::motion_status &status, uint32_t tick_ms,

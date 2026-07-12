@@ -40,7 +40,11 @@ class jump_action_impl : public controller::actions::action
                 case controller::actions::PREPARE:
                     jump.target_yaw = controller::actions::wrap_pi(ctx.status.yaw_angle +
                                           (float)jump.turn_dir * PI * 0.5f);
-                    controller::actions::set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 450, 250);
+                    controller::actions::set_pose(
+                        leg_contract::LEFT_MIN + 60,
+                        leg_contract::RIGHT_MIN - 60,
+                        450,
+                        250);
                     result.balance.reset_yaw_integral = true;
                     runtime.phase = controller::actions::PUSH;
                     runtime.timer = 0;
@@ -51,7 +55,11 @@ class jump_action_impl : public controller::actions::action
                     uint32_t wait_ms = jump.linear_dir > 0 ? 650 : (jump.linear_dir < 0 ? 700 : 200);
                     if((runtime.timer += tick_ms) >= wait_ms)
                     {
-                        controller::actions::set_pose(SERVO_LEFT_MAX + 20, SERVO_RIGHT_MAX - 20, 0, 0);
+                        controller::actions::set_pose(
+                            leg_contract::LEFT_MAX + 20,
+                            leg_contract::RIGHT_MAX - 20,
+                            0,
+                            0);
                         runtime.timer = 0;
                         runtime.phase = controller::actions::FLY;
                     }
@@ -61,7 +69,11 @@ class jump_action_impl : public controller::actions::action
                 case controller::actions::FLY:
                     if((runtime.timer += tick_ms) >= 130)
                     {
-                        controller::actions::set_pose(SERVO_LEFT_MIN + 60, SERVO_RIGHT_MIN - 60, 0, 0);
+                        controller::actions::set_pose(
+                            leg_contract::LEFT_MIN + 60,
+                            leg_contract::RIGHT_MIN - 60,
+                            0,
+                            0);
                         runtime.timer = 0;
                         runtime.phase = controller::actions::LAND;
                     }

@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "SimpleFOC.h"
+#include "ports/latest_value.h"
 
 namespace motor
 {
@@ -20,14 +21,25 @@ namespace motor
         uint32_t timestamp_us;
         float left_torque;
         float right_torque;
+        bool enabled = false;
+    };
+
+    struct input_ports
+    {
+        port::latest_reader<target_data> target;
+    };
+
+    struct output_ports
+    {
+        port::latest_writer<encoder_data> encoder;
     };
 
     extern BLDCMotor left;
     extern BLDCMotor right;
 
-    QueueHandle_t encoder_queue();
-    QueueHandle_t target_queue();
-    void init();
+    bool read_target(target_data &out);
+    void publish_encoder(const encoder_data &data);
+    void init(const input_ports &inputs, const output_ports &outputs);
 }
 
 #endif

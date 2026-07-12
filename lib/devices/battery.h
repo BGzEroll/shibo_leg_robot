@@ -2,6 +2,7 @@
 #define BATTERY_H
 
 #include <Arduino.h>
+#include "ports/latest_value.h"
 
 namespace battery
 {
@@ -13,8 +14,12 @@ namespace battery
         bool low = false;
     };
 
-    QueueHandle_t queue();
-    void init();
+    struct output_ports
+    {
+        port::latest_writer<data> status;
+    };
+
+    void init(const output_ports &outputs);
     void task_entry(void *arg);
 }
 

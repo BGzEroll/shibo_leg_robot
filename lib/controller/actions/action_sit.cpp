@@ -1,7 +1,6 @@
 #include "action_sit.h"
 
 #include "controller.h"
-#include "sts3032.h"
 
 static constexpr int16_t SERVO_MIDDLE_COUNT = 2048;
 static constexpr int16_t SIT_MIDDLE_READY_ERROR = 50;
@@ -18,11 +17,10 @@ static controller::actions::action_runtime sit_runtime;
  *
  * @return 左右腿舵机都接近中位时返回 true
  */
-static bool servo_middle_ready()
+static bool servo_middle_ready(const controller::action_io &ctx)
 {
-    sts3032::get_position_and_load();
-    int16_t left_error = abs(sts3032::status[0].position - SERVO_MIDDLE_COUNT);
-    int16_t right_error = abs(sts3032::status[1].position - SERVO_MIDDLE_COUNT);
+    int16_t left_error = abs(ctx.leg_status.left_position - SERVO_MIDDLE_COUNT);
+    int16_t right_error = abs(ctx.leg_status.right_position - SERVO_MIDDLE_COUNT);
     return left_error <= SIT_MIDDLE_READY_ERROR && right_error <= SIT_MIDDLE_READY_ERROR;
 }
 
@@ -72,7 +70,7 @@ static controller::action_result update_sit_flow(controller::actions::action_run
         case controller::actions::PREPARE:
             result.balance.mode = controller::balance_drive_mode::BALANCE;
             result.balance.enable_steering = true;
-            controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+            controller::actions::set_pose(leg_contract::LEFT_MIN, leg_contract::RIGHT_MIN, 450, 250);
             runtime.timer = 0;
             runtime.phase = controller::actions::INIT_PREPARE;
             break;
@@ -80,7 +78,7 @@ static controller::action_result update_sit_flow(controller::actions::action_run
         case controller::actions::INIT_PREPARE:
             result.balance.mode = controller::balance_drive_mode::BALANCE;
             result.balance.enable_steering = true;
-            if(servo_middle_ready())
+            if(servo_middle_ready(ctx))
             {
                 runtime.timer = 0;
                 controller::actions::set_torque(2);
@@ -112,7 +110,7 @@ static controller::action_result update_sit_flow(controller::actions::action_run
                 }
                 if(runtime.timer >= MIDDLE_CALIBRATION_RUN_MS && runtime.elapsed == 0)
                 {
-                    sts3032::calibrate_middle();
+                    controller::actions::calibrate_leg_middle();
                     runtime.elapsed = 1;
                 }
                 if(runtime.timer >= MIDDLE_CALIBRATION_SUCCESS_MS && runtime.elapsed == 1)
@@ -128,7 +126,7 @@ static controller::action_result update_sit_flow(controller::actions::action_run
             }
             if(ctx.input.exit_action && !ctx.sit_exit_locked)
             {
-                controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+                controller::actions::set_pose(leg_contract::LEFT_MIN, leg_contract::RIGHT_MIN, 450, 250);
                 controller::actions::reset_leg(ctx.leg);
                 runtime.phase = controller::actions::EXIT_PREPARE;
             }

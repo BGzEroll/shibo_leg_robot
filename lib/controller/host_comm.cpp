@@ -1,63 +1,22 @@
 #include "host_comm.h"
 
-#include "balance_core.h"
 #include "bus/uart_bus.h"
 #include "esp_timer.h"
 #include "freertos/task.h"
-
-namespace host_comm
-{
-    void init();
-}
 
 /* ---- 上位机通信运行状态 ---- */
 
 static constexpr int16_t VISION_LOST_VALUE = 32767;
 static constexpr uint32_t VISION_TIMEOUT_MS = 350;
 
-static QueueHandle_t rx_queue = nullptr;
+static host_comm::input_ports module_inputs;
+static host_comm::output_ports module_outputs;
 static uint8_t rx_buf[256];
 static uint32_t rx_len = 0;
 static uint8_t tx_buf[160];
 static uint32_t send_timer = 0;
 static uart_bus host_uart(0);
-static portMUX_TYPE vision_lock = portMUX_INITIALIZER_UNLOCKED;
-static host_comm::vision_measurement vision_snapshot;
 static uint32_t vision_seq = 0;
-
-/* ---- 状态访问 API ---- */
-
-/**
- * @brief 获取上位机遥控输入队列
- *
- * @return 队列句柄
- */
-QueueHandle_t host_comm::remote_queue()
-{
-    return rx_queue;
-}
-
-/**
- * @brief 获取最新视觉测量快照
- *
- * @param out 视觉测量输出
- *
- * @return 当前视觉测量有效时返回 true
- */
-bool host_comm::vision_latest(vision_measurement &out)
-{
-    portENTER_CRITICAL(&vision_lock);
-    out = vision_snapshot;
-    portEXIT_CRITICAL(&vision_lock);
-
-    if(!out.valid){return false;}
-    if((uint32_t)(millis() - out.timestamp_ms) > VISION_TIMEOUT_MS)
-    {
-        out.valid = false;
-        return false;
-    }
-    return true;
-}
 
 /* ---- 串口接收与解析 ---- */
 
@@ -80,10 +39,7 @@ static void parse_xbox(uint8_t *frame)
         data.axes[i] = (float)raw * 1.0e-3f;
     }
 
-    if(rx_queue)
-    {
-        xQueueOverwrite(rx_queue, &data);
-    }
+    module_outputs.remote_control.publish(data);
 }
 
 /**
@@ -103,9 +59,7 @@ static void parse_vision(uint8_t *frame)
     data.seq = ++vision_seq;
     data.valid = data.dx != VISION_LOST_VALUE && data.dy != VISION_LOST_VALUE;
 
-    portENTER_CRITICAL(&vision_lock);
-    vision_snapshot = data;
-    portEXIT_CRITICAL(&vision_lock);
+    module_outputs.vision.publish(data);
 }
 
 /**
@@ -228,7 +182,7 @@ static void send_status(uint32_t tick_ms)
     send_timer = 0;
 
     balance_core::debug_snapshot status;
-    if(!balance_core::get_debug_snapshot(status)){return;}
+    if(!module_inputs.debug_status.read(status)){return;}
 
     uint32_t idx = 0;
     tx_buf[idx++] = 0xFF;
@@ -258,12 +212,16 @@ static void send_status(uint32_t tick_ms)
 /* ---- 初始化与任务入口 ---- */
 
 /**
- * @brief 初始化上位机通信模块
+ * @brief 初始化上位机通信模块及其端口
+ *
+ * @param inputs 上位机通信输入端口
+ * @param outputs 上位机通信输出端口
  */
-void host_comm::init()
+void host_comm::init(const host_comm::input_ports &inputs, const host_comm::output_ports &outputs)
 {
+    module_inputs = inputs;
+    module_outputs = outputs;
     host_uart.init();
-    rx_queue = xQueueCreate(1, sizeof(host_comm::remote_data));
 }
 
 /**

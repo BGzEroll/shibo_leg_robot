@@ -42,7 +42,7 @@ class boot_action_impl : public controller::actions::action
                     break;
 
                 case controller::actions::INIT:
-                    controller::actions::set_pose(SERVO_LEFT_MIN, SERVO_RIGHT_MIN, 450, 250);
+                    controller::actions::set_pose(leg_contract::LEFT_MIN, leg_contract::RIGHT_MIN, 450, 250);
                     controller::actions::reset_leg(ctx.leg);
                     runtime.phase = controller::actions::INIT_PREPARE;
                     break;
@@ -400,8 +400,9 @@ static void apply_transition(controller::action_state &state, controller::action
  *
  * @param state 动作调度状态
  */
-void controller::actions_init(controller::action_state &state)
+void controller::actions_init(controller::action_state &state, const actuator_port::services &actuators)
 {
+    controller::actions::bind_actuators(actuators);
     state.mode = controller::mode_id::BOOT;
     state.current = &boot_action_instance;
     state.sit_exit_locked = false;

@@ -1,11 +1,6 @@
 #include "balance_core.h"
 
-#include "controller.h"
 #include "esp_timer.h"
-#include "freertos/task.h"
-#include "motor.h"
-#include "mpu6050_dev.h"
-#include "sts3032.h"
 
 /* ---- LQI 内部模型与运行状态 ---- */
 
@@ -135,8 +130,8 @@ struct core_status_snapshot
     float avg_leg_height = 0.0f;
 };
 
-static QueueHandle_t status_queue = nullptr;
-static bool motor_output_enabled = true;
+static balance_core::input_ports module_inputs;
+static balance_core::output_ports module_outputs;
 
 struct core_runtime
 {
@@ -369,22 +364,20 @@ static void update_yaw_reference(float dt)
  */
 static sensor_snapshot read_sensor(uint32_t tick_ms)
 {
-    if((core.servo_timer_ms += tick_ms) >= 20)
-    {
-        core.servo_timer_ms = 0;
-        sts3032::get_position_and_load();
-    }
-
     sensor_snapshot sensor;
     sensor.timestamp_us = (uint32_t)esp_timer_get_time();
-    sensor.servo_position[0] = sts3032::status[0].position;
-    sensor.servo_position[1] = sts3032::status[1].position;
+    actuator_port::leg_status leg_status;
+    if(module_inputs.leg_status.read(leg_status))
+    {
+        sensor.servo_position[0] = leg_status.left_position;
+        sensor.servo_position[1] = leg_status.right_position;
+    }
     sensor.leg_height[0] = servo_count_to_height(sensor.servo_position[0]);
     sensor.leg_height[1] = servo_count_to_height(sensor.servo_position[1]);
     sensor.avg_leg_height = (sensor.leg_height[0] + sensor.leg_height[1]) * 0.5f;
 
     mpu6050_dev::data imu_data;
-    if(mpu6050_dev::queue() && xQueuePeek(mpu6050_dev::queue(), &imu_data, 0) == pdTRUE)
+    if(module_inputs.imu.read(imu_data))
     {
         sensor.imu_valid = true;
         sensor.feedback.pitch_angle = imu_data.angle[1];
@@ -395,7 +388,7 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     }
 
     motor::encoder_data encoder;
-    if(motor::encoder_queue() && xQueuePeek(motor::encoder_queue(), &encoder, 0) == pdTRUE)
+    if(module_inputs.encoder.read(encoder))
     {
         sensor.encoder_valid = true;
         sensor.feedback.avg_linear_pos =
@@ -445,10 +438,8 @@ static void publish_motor_target(float left, float right)
     target.timestamp_us = (uint32_t)esp_timer_get_time();
     target.left_torque = left;
     target.right_torque = right;
-    if(motor::target_queue())
-    {
-        xQueueOverwrite(motor::target_queue(), &target);
-    }
+    target.enabled = core.motion.enable_motor;
+    module_outputs.motor_target.publish(target);
 }
 
 /**
@@ -461,19 +452,7 @@ static void solve_output()
         core.status.output[0] = 0.0f;
         core.status.output[1] = 0.0f;
         publish_motor_target(0.0f, 0.0f);
-        if(motor_output_enabled)
-        {
-            motor::left.disable();
-            motor::right.disable();
-            motor_output_enabled = false;
-        }
         return;
-    }
-    if(!motor_output_enabled)
-    {
-        motor::left.enable();
-        motor::right.enable();
-        motor_output_enabled = true;
     }
     if(core.direct_output.enable)
     {
@@ -534,8 +513,17 @@ static void solve_output()
  *
  * @param tick_ms 本次更新周期，单位毫秒
  */
-static void control_step(uint32_t tick_ms)
+static void run_control_step(uint32_t tick_ms)
 {
+    balance_core::command command;
+    if(module_inputs.control.read(command))
+    {
+        core.motion = command.motion;
+        core.direct_output = command.direct_output;
+        core.recover = command.recover;
+        core.feedback = command.feedback;
+    }
+
     float dt = (float)tick_ms * 1.0e-3f;
     sensor_snapshot sensor = read_sensor(tick_ms);
 
@@ -569,108 +557,39 @@ static void control_step(uint32_t tick_ms)
 
     solve_output();
 
-    if(status_queue)
-    {
-        xQueueOverwrite(status_queue, &core.status);
-    }
+    balance_core::motion_status motion;
+    motion.timestamp_us = core.status.timestamp_us;
+    motion.pitch_angle = core.status.pitch_angle;
+    motion.pitch_rate = core.status.pitch_rate;
+    motion.avg_linear_vel = core.status.avg_linear_vel;
+    motion.yaw_angle = core.status.yaw_angle;
+    motion.yaw_rate = core.status.yaw_rate;
+    motion.roll_angle = core.status.roll_angle;
+    motion.avg_leg_height = core.status.avg_leg_height;
+    module_outputs.motion.publish(motion);
+
+    balance_core::debug_snapshot debug;
+    debug.timestamp_us = core.status.timestamp_us;
+    debug.pitch_angle = core.status.pitch_angle;
+    debug.pitch_rate = core.status.pitch_rate;
+    debug.avg_linear_pos = core.status.avg_linear_pos;
+    debug.avg_linear_vel = core.status.avg_linear_vel;
+    debug.yaw_angle = core.status.yaw_angle;
+    debug.yaw_rate = core.status.yaw_rate;
+    debug.reference_linear_vel = core.status.reference_linear_vel;
+    debug.reference_yaw_rate = core.status.reference_yaw_rate;
+    memcpy(debug.input, core.status.input, sizeof(debug.input));
+    memcpy(debug.feedback_vector, core.status.feedback_vector, sizeof(debug.feedback_vector));
+    memcpy(debug.output, core.status.output, sizeof(debug.output));
+    debug.roll_angle = core.status.roll_angle;
+    memcpy(debug.leg_height, core.status.leg_height, sizeof(debug.leg_height));
+    module_outputs.debug.publish(debug);
 }
 
 /* ---- balance_core 公共 API ---- */
 
 /**
- * @brief 应用平衡核心普通运动控制请求
- *
- * @param control 运动控制请求
- */
-void balance_core::apply_motion_control(const balance_core::motion_control &control)
-{
-    core.motion = control;
-}
-
-/**
- * @brief 应用平衡核心直出电机请求
- *
- * @param control 直出电机请求
- */
-void balance_core::apply_direct_output(const balance_core::direct_output_control &control)
-{
-    core.direct_output = control;
-}
-
-/**
- * @brief 应用平衡核心恢复控制请求
- *
- * @param control 恢复控制请求
- */
-void balance_core::apply_recover_control(const balance_core::recover_control &control)
-{
-    core.recover = control;
-}
-
-/**
- * @brief 应用平衡核心反馈覆盖请求
- *
- * @param override_control 反馈覆盖请求
- */
-void balance_core::apply_feedback_override(const balance_core::feedback_override &override_control)
-{
-    core.feedback = override_control;
-}
-
-/**
- * @brief 读取动作层使用的平衡核心运动状态
- *
- * @param out 输出运动状态
- *
- * @return 读取成功时返回 true
- */
-bool balance_core::get_motion_status(balance_core::motion_status &out)
-{
-    core_status_snapshot status;
-    if(!status_queue || xQueuePeek(status_queue, &status, 0) != pdTRUE){return false;}
-
-    out.timestamp_us = status.timestamp_us;
-    out.pitch_angle = status.pitch_angle;
-    out.pitch_rate = status.pitch_rate;
-    out.avg_linear_vel = status.avg_linear_vel;
-    out.yaw_angle = status.yaw_angle;
-    out.yaw_rate = status.yaw_rate;
-    out.roll_angle = status.roll_angle;
-    out.avg_leg_height = status.avg_leg_height;
-    return true;
-}
-
-/**
- * @brief 读取调试使用的平衡核心状态快照
- *
- * @param out 输出调试快照
- *
- * @return 读取成功时返回 true
- */
-bool balance_core::get_debug_snapshot(balance_core::debug_snapshot &out)
-{
-    core_status_snapshot status;
-    if(!status_queue || xQueuePeek(status_queue, &status, 0) != pdTRUE){return false;}
-
-    out.timestamp_us = status.timestamp_us;
-    out.pitch_angle = status.pitch_angle;
-    out.pitch_rate = status.pitch_rate;
-    out.avg_linear_pos = status.avg_linear_pos;
-    out.avg_linear_vel = status.avg_linear_vel;
-    out.yaw_angle = status.yaw_angle;
-    out.yaw_rate = status.yaw_rate;
-    out.reference_linear_vel = status.reference_linear_vel;
-    out.reference_yaw_rate = status.reference_yaw_rate;
-    memcpy(out.input, status.input, sizeof(out.input));
-    memcpy(out.feedback_vector, status.feedback_vector, sizeof(out.feedback_vector));
-    memcpy(out.output, status.output, sizeof(out.output));
-    out.roll_angle = status.roll_angle;
-    memcpy(out.leg_height, status.leg_height, sizeof(out.leg_height));
-    return true;
-}
-
-/**
- * @brief 获取平衡核心对上层公开的信息快照
+ * @brief 获取平衡核心对外公开的信息快照
  *
  * @return 平衡核心信息快照
  */
@@ -683,97 +602,24 @@ balance_core::info balance_core::get_info()
 }
 
 /**
- * @brief 初始化平衡核心及其底层设备
+ * @brief 执行一次平衡控制周期
+ *
+ * @param tick_ms 本次更新周期，单位毫秒
  */
-void balance_core::init()
+void balance_core::step(uint32_t tick_ms)
 {
+    run_control_step(tick_ms);
+}
+
+/**
+ * @brief 初始化平衡控制模块及端口
+ *
+ * @param inputs 平衡控制输入端口
+ * @param outputs 平衡控制输出端口
+ */
+void balance_core::init(const balance_core::input_ports &inputs, const balance_core::output_ports &outputs)
+{
+    module_inputs = inputs;
+    module_outputs = outputs;
     init_lqi();
-
-    status_queue = xQueueCreate(1, sizeof(core_status_snapshot));
-
-    sts3032::init();
-    mpu6050_dev::init();
-    motor::init();
-}
-
-/* ---- RTOS 任务入口 ---- */
-
-/**
- * @brief 平衡核心高频 IO 任务入口
- *
- * @param arg RTOS 任务参数
- */
-void balance_core::core_task_entry(void *arg)
-{
-    uint32_t last_encoder_us = (uint32_t)esp_timer_get_time();
-    uint32_t last_imu_us = last_encoder_us;
-
-    while(true)
-    {
-        motor::left.loopFOC();
-        motor::right.loopFOC();
-
-        motor::target_data target;
-        if(motor::target_queue() && xQueuePeek(motor::target_queue(), &target, 0) == pdTRUE)
-        {
-            motor::left.move(target.left_torque);
-            motor::right.move(target.right_torque);
-        }
-
-        uint32_t now_us = (uint32_t)esp_timer_get_time();
-        if((uint32_t)(now_us - last_encoder_us) >= 1000)
-        {
-            last_encoder_us = now_us;
-            motor::encoder_data encoder;
-            encoder.timestamp_us = now_us;
-            encoder.left_shaft_angle = motor::left.shaft_angle;
-            encoder.left_shaft_velocity = motor::left.shaft_velocity;
-            encoder.right_shaft_angle = motor::right.shaft_angle;
-            encoder.right_shaft_velocity = motor::right.shaft_velocity;
-            if(motor::encoder_queue())
-            {
-                xQueueOverwrite(motor::encoder_queue(), &encoder);
-            }
-        }
-
-        if((uint32_t)(now_us - last_imu_us) >= 5000)
-        {
-            last_imu_us = now_us;
-            mpu6050_dev::imu.update();
-
-            mpu6050_dev::data imu;
-            imu.timestamp_us = now_us;
-            imu.temperature = mpu6050_dev::imu.temperature;
-            for(uint8_t i = 0; i < 3; i++)
-            {
-                imu.acc[i] = mpu6050_dev::imu.acc[i];
-                imu.gyro[i] = mpu6050_dev::imu.gyro[i];
-                imu.angle[i] = mpu6050_dev::imu.angle[i];
-            }
-            if(mpu6050_dev::queue())
-            {
-                xQueueOverwrite(mpu6050_dev::queue(), &imu);
-            }
-        }
-
-        taskYIELD();
-    }
-}
-
-/**
- * @brief 平衡核心控制任务入口
- *
- * @param arg RTOS 任务参数
- */
-void balance_core::control_task_entry(void *arg)
-{
-    TickType_t last_wake_time = xTaskGetTickCount();
-    uint32_t period_ms = 2;
-
-    while(true)
-    {
-        controller::update(period_ms);
-        control_step(period_ms);
-        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(period_ms));
-    }
 }

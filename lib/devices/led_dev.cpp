@@ -1,9 +1,9 @@
 #include "led_dev.h"
 
-#include "battery.h"
 #include "freertos/task.h"
 
 led led_dev::board_led(13);
+static led_dev::input_ports module_inputs;
 
 /**
  * @brief 查询当前是否处于低电状态
@@ -13,11 +13,7 @@ led led_dev::board_led(13);
 static bool battery_low()
 {
     battery::data data;
-    if(!battery::queue() ||
-       xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
-    {
-        return false;
-    }
+    if(!module_inputs.battery_status.read(data)){return false;}
     return data.valid && data.low;
 }
 
@@ -41,10 +37,13 @@ static void update_led(bool low, uint32_t phase_ms)
 }
 
 /**
- * @brief 初始化板载 LED 设备
+ * @brief 初始化板载 LED 设备及端口
+ *
+ * @param inputs 板载 LED 输入端口
  */
-void led_dev::init()
+void led_dev::init(const led_dev::input_ports &inputs)
 {
+    module_inputs = inputs;
     led_dev::board_led.init();
 }
 

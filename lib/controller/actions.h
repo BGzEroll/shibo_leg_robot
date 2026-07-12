@@ -3,9 +3,11 @@
 
 #include <Arduino.h>
 #include "SimpleFOC.h"
+#include "ports/actuator_ports.h"
+#include "contracts/leg_config.h"
 #include "balance_core.h"
 #include "control_input.h"
-#include "sts3032.h"
+#include "host_comm.h"
 
 namespace controller
 {
@@ -51,7 +53,7 @@ namespace controller
         }
 
         float roll_adjust = 0.0f;
-        float height_base = (float)LEG_HEIGHT_BASE;
+        float height_base = leg_contract::HEIGHT_BASE;
         PIDController roll_pid{8.0f, 30.0f, 0.0f, 100000.0f, 450.0f};
         LowPassFilter roll_lpf{0.3f};
     };
@@ -82,6 +84,9 @@ namespace controller
         bool battery_valid;
         bool battery_low;
         bool sit_exit_locked;
+        actuator_port::leg_status leg_status;
+        host_comm::vision_measurement vision;
+        bool vision_valid;
     };
 
     struct action_enter_params
@@ -143,7 +148,7 @@ namespace controller
         };
     }
 
-    void actions_init(action_state &state);
+    void actions_init(action_state &state, const actuator_port::services &actuators);
     mode_id actions_mode(const action_state &state);
     balance_request actions_update(action_state &state, action_io &ctx, uint32_t tick_ms);
 }

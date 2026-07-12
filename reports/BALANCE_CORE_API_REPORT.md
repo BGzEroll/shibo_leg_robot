@@ -1,4 +1,6 @@
-# balance_core API 收紧结果报告
+# balance_core API 收紧结果报告（旧架构存档）
+
+> 本文记录端口架构重构前的收紧结果。旧 setter/getter 和任务入口已经删除，当前接口请查看 `reports/PORT_ARCHITECTURE_REPORT.md`。
 
 日期：2026-07-08
 

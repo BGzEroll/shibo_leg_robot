@@ -1,8 +1,5 @@
 #include "action_kick.h"
 
-#include "host_comm.h"
-#include "ptk7350.h"
-
 static constexpr float CAM_INITIAL_ANGLE = 45.0f;
 static constexpr float CAM_LOST_ANGLE = 45.0f;
 static constexpr float CAM_PD_P = 0.07f;
@@ -31,6 +28,10 @@ static constexpr uint32_t KICK_COOLDOWN_MS = 2000;
 static constexpr uint32_t KICK_EXIT_DELAY_MS = 500;
 static constexpr uint32_t RUN_AFTER_KICK_MS = 700;
 static constexpr float KICK_LEG_HEIGHT_COUNT_OFFSET = 50.0f;
+static constexpr uint16_t CAMERA_MIN_ANGLE = 0;
+static constexpr uint16_t CAMERA_MAX_ANGLE = 180;
+static constexpr uint16_t FRONTIER_MIN_ANGLE = 0;
+static constexpr uint16_t FRONTIER_MAX_ANGLE = 180;
 
 struct kick_runtime
 {
@@ -72,17 +73,17 @@ class kick_action_base : public controller::actions::action
     protected:
         void set_camera(float angle)
         {
-            kick.cam_angle = constrain(angle, (float)CAMSERVO_MIN, (float)CAMSERVO_MAX);
-            ptk7350::cam_servo.set_angle((uint16_t)kick.cam_angle);
+            kick.cam_angle = constrain(angle, (float)CAMERA_MIN_ANGLE, (float)CAMERA_MAX_ANGLE);
+            controller::actions::set_camera_angle((uint16_t)kick.cam_angle);
         }
 
         void set_frontier(uint16_t angle)
         {
-            angle = constrain(angle, (uint16_t)FRONTIERSERVO_MIN, (uint16_t)FRONTIERSERVO_MAX);
+            angle = constrain(angle, FRONTIER_MIN_ANGLE, FRONTIER_MAX_ANGLE);
             if(kick.frontier_angle == angle){return;}
 
             kick.frontier_angle = angle;
-            ptk7350::frontier_servo.set_angle(angle);
+            controller::actions::set_frontier_angle(angle);
         }
 
         controller::balance_request kick_base_command(controller::action_io &ctx)
@@ -96,9 +97,10 @@ class kick_action_base : public controller::actions::action
             return cmd;
         }
 
-        bool read_vision(host_comm::vision_measurement &out)
+        bool read_vision(const controller::action_io &ctx, host_comm::vision_measurement &out)
         {
-            return host_comm::vision_latest(out);
+            out = ctx.vision;
+            return ctx.vision_valid;
         }
 
         bool consume_vision_step(const host_comm::vision_measurement &vision)
@@ -280,7 +282,7 @@ class kick_place_action_impl : public kick_action_base
             update_kick_cooldown(tick_ms);
 
             host_comm::vision_measurement vision;
-            if(!read_vision(vision))
+            if(!read_vision(ctx, vision))
             {
                 reset_lost_target();
                 return result;
@@ -367,7 +369,7 @@ class kick_run_action_impl : public kick_action_base
             }
 
             host_comm::vision_measurement vision;
-            if(!read_vision(vision))
+            if(!read_vision(ctx, vision))
             {
                 reset_lost_target();
                 return result;
