@@ -16,7 +16,8 @@ namespace mpu6050_dev
 
     extern mpu6050 imu;
 
-    QueueHandle_t queue();
+    bool publish_data(const data &value);
+    bool peek_data(data &out);
     void init();
 }
 

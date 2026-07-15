@@ -131,13 +131,16 @@ static void update_status()
 /* ---- battery 公共 API ---- */
 
 /**
- * @brief 获取电池状态队列
+ * @brief 读取最新电池状态
  *
- * @return 电池状态队列句柄
+ * @param out 电池状态输出
+ *
+ * @return 队列存在且已有数据时返回 true
  */
-QueueHandle_t battery::queue()
+bool battery::peek_data(battery::data &out)
 {
-    return battery_queue;
+    return battery_queue &&
+           xQueuePeek(battery_queue, &out, 0) == pdTRUE;
 }
 
 /**

@@ -384,7 +384,7 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     sensor.avg_leg_height = (sensor.leg_height[0] + sensor.leg_height[1]) * 0.5f;
 
     mpu6050_dev::data imu_data;
-    if(mpu6050_dev::queue() && xQueuePeek(mpu6050_dev::queue(), &imu_data, 0) == pdTRUE)
+    if(mpu6050_dev::peek_data(imu_data))
     {
         sensor.imu_valid = true;
         sensor.feedback.pitch_angle = imu_data.angle[1];
@@ -395,7 +395,7 @@ static sensor_snapshot read_sensor(uint32_t tick_ms)
     }
 
     motor::encoder_data encoder;
-    if(motor::encoder_queue() && xQueuePeek(motor::encoder_queue(), &encoder, 0) == pdTRUE)
+    if(motor::peek_encoder(encoder))
     {
         sensor.encoder_valid = true;
         sensor.feedback.avg_linear_pos =
@@ -445,10 +445,7 @@ static void publish_motor_target(float left, float right)
     target.timestamp_us = (uint32_t)esp_timer_get_time();
     target.left_torque = left;
     target.right_torque = right;
-    if(motor::target_queue())
-    {
-        xQueueOverwrite(motor::target_queue(), &target);
-    }
+    motor::publish_target(target);
 }
 
 /**
@@ -714,7 +711,7 @@ void balance_core::core_task_entry(void *arg)
         motor::right.loopFOC();
 
         motor::target_data target;
-        if(motor::target_queue() && xQueuePeek(motor::target_queue(), &target, 0) == pdTRUE)
+        if(motor::peek_target(target))
         {
             motor::left.move(target.left_torque);
             motor::right.move(target.right_torque);
@@ -730,10 +727,7 @@ void balance_core::core_task_entry(void *arg)
             encoder.left_shaft_velocity = motor::left.shaft_velocity;
             encoder.right_shaft_angle = motor::right.shaft_angle;
             encoder.right_shaft_velocity = motor::right.shaft_velocity;
-            if(motor::encoder_queue())
-            {
-                xQueueOverwrite(motor::encoder_queue(), &encoder);
-            }
+            motor::publish_encoder(encoder);
         }
 
         if((uint32_t)(now_us - last_imu_us) >= 5000)
@@ -750,10 +744,7 @@ void balance_core::core_task_entry(void *arg)
                 imu.gyro[i] = mpu6050_dev::imu.gyro[i];
                 imu.angle[i] = mpu6050_dev::imu.angle[i];
             }
-            if(mpu6050_dev::queue())
-            {
-                xQueueOverwrite(mpu6050_dev::queue(), &imu);
-            }
+            mpu6050_dev::publish_data(imu);
         }
 
         taskYIELD();

@@ -123,8 +123,7 @@ static void update_camera(uint32_t tick_ms)
 static battery::data read_battery()
 {
     battery::data data;
-    if(!battery::queue() ||
-       xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
+    if(!battery::peek_data(data))
     {
         return battery::data{};
     }

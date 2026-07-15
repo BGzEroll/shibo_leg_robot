@@ -16,23 +16,55 @@ BLDCMotor motor::left = BLDCMotor(7, 12.27166f, 100.0f);
 BLDCMotor motor::right = BLDCMotor(7, 12.27166f, 100.0f);
 
 /**
- * @brief 获取电机编码器数据队列
+ * @brief 发布最新电机编码器数据
  *
- * @return 队列句柄
+ * @param value 电机编码器数据
+ *
+ * @return 队列存在且发布成功时返回 true
  */
-QueueHandle_t motor::encoder_queue()
+bool motor::publish_encoder(const motor::encoder_data &value)
 {
-    return encoder_data_queue;
+    return encoder_data_queue &&
+           xQueueOverwrite(encoder_data_queue, &value) == pdTRUE;
 }
 
 /**
- * @brief 获取电机目标输出队列
+ * @brief 读取最新电机编码器数据
  *
- * @return 队列句柄
+ * @param out 电机编码器数据输出
+ *
+ * @return 队列存在且已有数据时返回 true
  */
-QueueHandle_t motor::target_queue()
+bool motor::peek_encoder(motor::encoder_data &out)
 {
-    return motor_target_data_queue;
+    return encoder_data_queue &&
+           xQueuePeek(encoder_data_queue, &out, 0) == pdTRUE;
+}
+
+/**
+ * @brief 发布最新电机目标输出
+ *
+ * @param value 电机目标输出
+ *
+ * @return 队列存在且发布成功时返回 true
+ */
+bool motor::publish_target(const motor::target_data &value)
+{
+    return motor_target_data_queue &&
+           xQueueOverwrite(motor_target_data_queue, &value) == pdTRUE;
+}
+
+/**
+ * @brief 读取最新电机目标输出
+ *
+ * @param out 电机目标输出
+ *
+ * @return 队列存在且已有数据时返回 true
+ */
+bool motor::peek_target(motor::target_data &out)
+{
+    return motor_target_data_queue &&
+           xQueuePeek(motor_target_data_queue, &out, 0) == pdTRUE;
 }
 
 /**

@@ -13,8 +13,7 @@ led led_dev::board_led(13);
 static bool battery_low()
 {
     battery::data data;
-    if(!battery::queue() ||
-       xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
+    if(!battery::peek_data(data))
     {
         return false;
     }

@@ -25,8 +25,7 @@ static bool red_enabled = false;
 static bool battery_low()
 {
     battery::data data;
-    if(!battery::queue() ||
-       xQueuePeek(battery::queue(), &data, 0) != pdTRUE)
+    if(!battery::peek_data(data))
     {
         return false;
     }

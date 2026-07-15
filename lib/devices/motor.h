@@ -25,8 +25,10 @@ namespace motor
     extern BLDCMotor left;
     extern BLDCMotor right;
 
-    QueueHandle_t encoder_queue();
-    QueueHandle_t target_queue();
+    bool publish_encoder(const encoder_data &value);
+    bool peek_encoder(encoder_data &out);
+    bool publish_target(const target_data &value);
+    bool peek_target(target_data &out);
     void init();
 }
 

@@ -13,7 +13,7 @@ namespace battery
         bool low = false;
     };
 
-    QueueHandle_t queue();
+    bool peek_data(data &out);
     void init();
     void task_entry(void *arg);
 }
