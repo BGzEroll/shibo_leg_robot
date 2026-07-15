@@ -5,12 +5,6 @@
 
 namespace host_comm
 {
-    /**
-     * @brief 上位机模块发布的最新遥控输入状态
-     *
-     * sequence 为本机成功解析的遥控帧序号，press_count 保存各按钮累计
-     * 按下次数，不改变上位机线协议格式。
-     */
     struct input
     {
         uint32_t stream_id = 0;

@@ -339,7 +339,7 @@ bool battery::peek_data(data &out);
 - `set_low_latency_mode(bool)`；
 - `update()`、`init()`。
 
-其主要调用者是 `web_server`。WebSocket 取得控制权时使用低延迟模式关闭 WiFi Sleep，释放控制权后恢复原设置。
+其主要调用者是 `web_server`。WebSocket 取得控制权时提交低延迟请求，由 WiFi 维护任务关闭 WiFi Sleep；释放控制权 3 秒后再由同一任务恢复原设置，期间重新建连会取消恢复。
 
 ### 6.6 `xbox_dev`
 

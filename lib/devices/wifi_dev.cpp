@@ -2,6 +2,7 @@
 
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 /* ---- WiFi 配置与运行状态 ---- */
 
@@ -13,22 +14,83 @@ static constexpr const char *AP_PASS = "12345678";
 static constexpr uint32_t START_CONNECT_TIMEOUT_MS = 8000;
 static constexpr uint32_t PORTAL_CONNECT_TIMEOUT_MS = 12000;
 static constexpr uint32_t STA_ONLY_DELAY_MS = 2000;
+static constexpr uint32_t SLEEP_RESTORE_DELAY_MS = 3000;
 static constexpr wifi_power_t WIFI_TX_POWER = WIFI_POWER_8_5dBm;
 
+static portMUX_TYPE low_latency_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool portal_active = false;
 static bool pending_sta_only = false;
-static bool low_latency_mode = false;
+static bool low_latency_requested = false;
 static uint32_t sta_only_at_ms = 0;
+static uint32_t sleep_restore_at_ms = 0;
+static uint32_t low_latency_request_sequence = 0;
 
 /* ---- WiFi 内部流程 ---- */
 
 /**
- * @brief 应用 WiFi 低功耗配置
+ * @brief 应用不涉及省电模式切换的 WiFi 射频配置
  */
-static void apply_low_power_settings()
+static void apply_radio_settings()
 {
-    WiFi.setSleep(!low_latency_mode);
     WiFi.setTxPower(WIFI_TX_POWER);
+}
+
+/**
+ * @brief 清除已经完成的 WiFi Sleep 恢复请求
+ *
+ * @param sequence 已应用的请求序号
+ */
+static void finish_sleep_restore(uint32_t sequence)
+{
+    portENTER_CRITICAL(&low_latency_lock);
+    if(low_latency_request_sequence == sequence && !low_latency_requested)
+    {
+        sleep_restore_at_ms = 0;
+    }
+    portEXIT_CRITICAL(&low_latency_lock);
+}
+
+/**
+ * @brief 在 WiFi 维护任务中应用最新低延迟请求
+ */
+static void apply_low_latency_request()
+{
+    bool requested;
+    uint32_t restore_at_ms;
+    uint32_t sequence;
+    portENTER_CRITICAL(&low_latency_lock);
+    requested = low_latency_requested;
+    restore_at_ms = sleep_restore_at_ms;
+    sequence = low_latency_request_sequence;
+    portEXIT_CRITICAL(&low_latency_lock);
+
+    uint32_t now_ms = millis();
+    if(!requested &&
+       (!restore_at_ms || (int32_t)(now_ms - restore_at_ms) < 0))
+    {
+        return;
+    }
+
+    wifi_ps_type_t target = requested ? WIFI_PS_NONE : WIFI_PS_MIN_MODEM;
+    wifi_ps_type_t current;
+    if(esp_wifi_get_ps(&current) != ESP_OK){return;}
+    if(current == target)
+    {
+        if(!requested){finish_sleep_restore(sequence);}
+        return;
+    }
+
+    bool request_current;
+    portENTER_CRITICAL(&low_latency_lock);
+    request_current = low_latency_request_sequence == sequence &&
+        low_latency_requested == requested;
+    portEXIT_CRITICAL(&low_latency_lock);
+    if(!request_current){return;}
+
+    if(esp_wifi_set_ps(target) == ESP_OK && !requested)
+    {
+        finish_sleep_restore(sequence);
+    }
 }
 
 /**
@@ -95,7 +157,7 @@ static bool wait_station_connected(uint32_t timeout_ms)
 static bool connect_station(const String &ssid, const String &password, wifi_mode_t mode, uint32_t timeout_ms)
 {
     WiFi.mode(mode);
-    apply_low_power_settings();
+    apply_radio_settings();
     WiFi.begin(ssid.c_str(), password.c_str());
     return wait_station_connected(timeout_ms);
 }
@@ -106,7 +168,7 @@ static bool connect_station(const String &ssid, const String &password, wifi_mod
 static void start_config_portal()
 {
     WiFi.mode(WIFI_AP_STA);
-    apply_low_power_settings();
+    apply_radio_settings();
     WiFi.softAP(AP_SSID, AP_PASS);
     portal_active = true;
 }
@@ -118,7 +180,7 @@ static void switch_to_station_only()
 {
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
-    apply_low_power_settings();
+    apply_radio_settings();
     portal_active = false;
     pending_sta_only = false;
 }
@@ -179,15 +241,22 @@ IPAddress wifi_dev::station_ip()
 }
 
 /**
- * @brief 切换网页遥控使用的低延迟 WiFi 模式
+ * @brief 提交网页遥控使用的低延迟 WiFi 模式请求
  *
  * @param enabled 是否关闭 WiFi 休眠以降低遥控延迟
  */
 void wifi_dev::set_low_latency_mode(bool enabled)
 {
-    if(low_latency_mode == enabled){return;}
-    low_latency_mode = enabled;
-    WiFi.setSleep(!low_latency_mode);
+    uint32_t restore_at_ms = enabled ? 0 : millis() + SLEEP_RESTORE_DELAY_MS;
+
+    portENTER_CRITICAL(&low_latency_lock);
+    if(low_latency_requested != enabled)
+    {
+        low_latency_requested = enabled;
+        sleep_restore_at_ms = restore_at_ms;
+        low_latency_request_sequence++;
+    }
+    portEXIT_CRITICAL(&low_latency_lock);
 }
 
 /**
@@ -199,6 +268,7 @@ void wifi_dev::update()
     {
         switch_to_station_only();
     }
+    apply_low_latency_request();
 }
 
 /**
@@ -206,9 +276,15 @@ void wifi_dev::update()
  */
 void wifi_dev::init()
 {
+    portENTER_CRITICAL(&low_latency_lock);
+    low_latency_requested = false;
+    sleep_restore_at_ms = 0;
+    low_latency_request_sequence = 0;
+    portEXIT_CRITICAL(&low_latency_lock);
+
     WiFi.persistent(false);
     WiFi.setAutoReconnect(true);
-    apply_low_power_settings();
+    apply_radio_settings();
 
     String ssid;
     String password;

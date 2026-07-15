@@ -5,12 +5,6 @@
 
 namespace xbox_dev
 {
-    /**
-     * @brief Xbox 模块发布的最新输入状态
-     *
-     * stream_id 在连接代次变化时递增，sequence 为当前连接中的采样序号，
-     * press_count 保存各按钮累计按下次数。
-     */
     struct input
     {
         uint32_t stream_id = 0;
