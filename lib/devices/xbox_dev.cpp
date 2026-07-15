@@ -12,6 +12,7 @@
 static constexpr const char *NVS_NAMESPACE = "xbox";
 static constexpr const char *NVS_TARGET_KEY = "target";
 static constexpr uint16_t XBOX_APPEARANCE = 964;
+static constexpr uint8_t INPUT_BUTTON_COUNT = 16;
 static constexpr uint32_t SCAN_PAUSE_MS = 60;
 static constexpr const char *HID_SERVICE_UUID = "1812";
 static constexpr const char *XBOX_MANUFACTURER_NORMAL = "060000";
@@ -19,7 +20,10 @@ static constexpr const char *XBOX_MANUFACTURER_SEARCHING = "0600030080";
 
 static xbox *gamepad = nullptr;
 static QueueHandle_t xbox_data_queue = nullptr;
+static xbox_dev::input xbox_input_state;
+static uint32_t xbox_stream_id = 0;
 static volatile bool ble_scan_active = false;
+static bool input_connected = false;
 static String current_target_address;
 
 class ble_scan_callbacks : public NimBLEScanCallbacks
@@ -37,9 +41,47 @@ static void clear_input_state()
 {
     if(!xbox_data_queue){return;}
 
-    xbox_dev::data state = {};
-    state.timestamp_us = (uint32_t)esp_timer_get_time();
-    xQueueOverwrite(xbox_data_queue, &state);
+    input_connected = false;
+    xbox_input_state = xbox_dev::input{};
+    xbox_input_state.stream_id = ++xbox_stream_id;
+    xQueueOverwrite(xbox_data_queue, &xbox_input_state);
+}
+
+/**
+ * @brief 按当前手柄状态发布最新输入快照
+ */
+static void publish_input_state()
+{
+    bool connected = gamepad && gamepad->get_connection_state();
+    if(connected != input_connected)
+    {
+        input_connected = connected;
+        xbox_input_state = xbox_dev::input{};
+        xbox_input_state.stream_id = ++xbox_stream_id;
+    }
+
+    if(!connected)
+    {
+        xQueueOverwrite(xbox_data_queue, &xbox_input_state);
+        return;
+    }
+
+    uint16_t buttons = gamepad->buttons;
+    uint16_t pressed_buttons = buttons & (uint16_t)~xbox_input_state.buttons;
+    for(uint8_t i = 0; i < INPUT_BUTTON_COUNT; i++)
+    {
+        if(pressed_buttons & (uint16_t)(1U << i))
+        {
+            xbox_input_state.press_count[i]++;
+        }
+    }
+
+    xbox_input_state.sequence++;
+    xbox_input_state.timestamp_us = (uint32_t)esp_timer_get_time();
+    xbox_input_state.buttons = buttons;
+    memcpy(xbox_input_state.axes, gamepad->axes, sizeof(xbox_input_state.axes));
+    xbox_input_state.valid = true;
+    xQueueOverwrite(xbox_data_queue, &xbox_input_state);
 }
 
 /**
@@ -156,13 +198,16 @@ static bool is_xbox_device(const NimBLEAdvertisedDevice *device)
 /* ---- xbox_dev 公共 API ---- */
 
 /**
- * @brief 获取 Xbox 输入数据队列
+ * @brief 读取 Xbox 最新输入快照
  *
- * @return 队列句柄
+ * @param out 输入快照输出
+ *
+ * @return 队列存在且已有快照时返回 true
  */
-QueueHandle_t xbox_dev::queue()
+bool xbox_dev::peek_input(xbox_dev::input &out)
 {
-    return xbox_data_queue;
+    return xbox_data_queue &&
+           xQueuePeek(xbox_data_queue, &out, 0) == pdTRUE;
 }
 
 /**
@@ -257,7 +302,7 @@ bool xbox_dev::set_target_address(const String &address)
 void xbox_dev::init()
 {
     current_target_address = load_target_address();
-    xbox_data_queue = xQueueCreate(1, sizeof(xbox_dev::data));
+    xbox_data_queue = xQueueCreate(1, sizeof(xbox_dev::input));
     rebuild_gamepad();
 }
 
@@ -279,16 +324,7 @@ void xbox_dev::task_entry(void *arg)
         }
 
         gamepad->update();
-
-        xbox_dev::data state;
-        state.timestamp_us = (uint32_t)esp_timer_get_time();
-        state.buttons = gamepad->buttons;
-        memcpy(state.axes, gamepad->axes, sizeof(gamepad->axes));
-
-        if(xbox_data_queue)
-        {
-            xQueueOverwrite(xbox_data_queue, &state);
-        }
+        if(xbox_data_queue){publish_input_state();}
 
         delay(20);
     }

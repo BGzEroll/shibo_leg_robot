@@ -2,6 +2,7 @@
 
 #include "controller.h"
 #include "esp_timer.h"
+#include "freertos/queue.h"
 #include "wifi_dev.h"
 #include "xbox_dev.h"
 #include <WiFi.h>
@@ -15,6 +16,7 @@ static constexpr uint32_t SERVICE_TASK_DELAY_MS = 50;
 static constexpr uint32_t REMOTE_LEASE_TIMEOUT_MS = 500;
 static constexpr uint32_t REMOTE_ACK_INTERVAL_MS = 200;
 static constexpr uint8_t BLE_SCAN_MAX = 24;
+static constexpr uint8_t REMOTE_BUTTON_COUNT = 16;
 static constexpr uint8_t REMOTE_PROTOCOL_VERSION = 1;
 static constexpr uint8_t REMOTE_INPUT_TYPE = 0x01;
 static constexpr uint8_t REMOTE_STATUS_TYPE = 0x81;
@@ -33,9 +35,11 @@ static constexpr int32_t REMOTE_AXIS_MIN = -1000;
 static constexpr int32_t REMOTE_AXIS_MAX = 1000;
 
 static httpd_handle_t server = nullptr;
+static QueueHandle_t remote_input_queue = nullptr;
 static portMUX_TYPE remote_lock = portMUX_INITIALIZER_UNLOCKED;
-static web_server::remote_input remote_state;
+static web_server::input remote_state;
 static int remote_socket = -1;
+static uint32_t remote_stream_id = 0;
 static uint32_t remote_timestamp_ms = 0;
 static uint32_t remote_ack_timestamp_ms = 0;
 static uint32_t remote_sequence = 0;
@@ -700,7 +704,12 @@ static void clear_remote_session(int socket)
         remote_ack_timestamp_ms = 0;
         remote_sequence = 0;
         remote_sequence_valid = false;
-        remote_state = web_server::remote_input{};
+        remote_state = web_server::input{};
+        remote_state.stream_id = remote_stream_id;
+        if(remote_input_queue)
+        {
+            xQueueOverwrite(remote_input_queue, &remote_state);
+        }
         cleared = true;
     }
     portEXIT_CRITICAL(&remote_lock);
@@ -1290,7 +1299,9 @@ static esp_err_t handle_remote_websocket(httpd_req_t *req)
             remote_ack_timestamp_ms = 0;
             remote_sequence = 0;
             remote_sequence_valid = false;
-            remote_state = web_server::remote_input{};
+            remote_state = web_server::input{};
+            remote_state.stream_id = ++remote_stream_id;
+            xQueueOverwrite(remote_input_queue, &remote_state);
             acquired = true;
         }
         portEXIT_CRITICAL(&remote_lock);
@@ -1373,7 +1384,13 @@ static esp_err_t handle_remote_websocket(httpd_req_t *req)
     {
         remote_state.timestamp_us = (uint32_t)esp_timer_get_time();
         remote_state.held_buttons = held_buttons;
-        remote_state.pressed_buttons |= pressed_buttons;
+        for(uint8_t i = 0; i < REMOTE_BUTTON_COUNT; i++)
+        {
+            if(pressed_buttons & (uint16_t)(1U << i))
+            {
+                remote_state.press_count[i]++;
+            }
+        }
         for(uint8_t i = 0; i < 6; i++)
         {
             remote_state.axes[i] = (float)axis_values[i] * 1.0e-3f;
@@ -1381,10 +1398,15 @@ static esp_err_t handle_remote_websocket(httpd_req_t *req)
         remote_timestamp_ms = now_ms;
         remote_sequence = sequence;
         remote_sequence_valid = true;
-        accepted = true;
-        send_ack = pressed_buttons != 0 ||
-            (uint32_t)(now_ms - remote_ack_timestamp_ms) >= REMOTE_ACK_INTERVAL_MS;
-        if(send_ack){remote_ack_timestamp_ms = now_ms;}
+        remote_state.sequence = sequence;
+        remote_state.valid = true;
+        if(xQueueOverwrite(remote_input_queue, &remote_state) == pdPASS)
+        {
+            accepted = true;
+            send_ack = pressed_buttons != 0 ||
+                (uint32_t)(now_ms - remote_ack_timestamp_ms) >= REMOTE_ACK_INTERVAL_MS;
+            if(send_ack){remote_ack_timestamp_ms = now_ms;}
+        }
     }
     portEXIT_CRITICAL(&remote_lock);
 
@@ -1463,19 +1485,16 @@ static bool register_routes()
 /* ---- web_server 公共 API ---- */
 
 /**
- * @brief 读取网页遥控最新输入并消费按键边沿
+ * @brief 读取网页遥控最新输入快照
  *
  * @param out 网页遥控输入输出
  *
- * @return 已收到过有效输入时返回 true
+ * @return 队列存在且已有快照时返回 true
  */
-bool web_server::take_remote_input(web_server::remote_input &out)
+bool web_server::peek_input(web_server::input &out)
 {
-    portENTER_CRITICAL(&remote_lock);
-    out = remote_state;
-    remote_state.pressed_buttons = 0;
-    portEXIT_CRITICAL(&remote_lock);
-    return out.timestamp_us != 0;
+    return remote_input_queue &&
+           xQueuePeek(remote_input_queue, &out, 0) == pdTRUE;
 }
 
 /**
@@ -1488,6 +1507,11 @@ bool web_server::init()
     if(server){return true;}
 
     wifi_dev::init();
+    if(!remote_input_queue)
+    {
+        remote_input_queue = xQueueCreate(1, sizeof(web_server::input));
+    }
+    if(!remote_input_queue){return false;}
     clear_remote_session(-1);
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();

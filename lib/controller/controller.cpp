@@ -7,11 +7,6 @@
 #include "input_router.h"
 #include "ptk7350.h"
 
-namespace host_comm
-{
-    void init();
-}
-
 /* ---- 控制器运行状态 ---- */
 
 static controller::action_state action;

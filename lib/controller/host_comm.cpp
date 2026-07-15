@@ -5,17 +5,14 @@
 #include "esp_timer.h"
 #include "freertos/task.h"
 
-namespace host_comm
-{
-    void init();
-}
-
 /* ---- 上位机通信运行状态 ---- */
 
 static constexpr int16_t VISION_LOST_VALUE = 32767;
 static constexpr uint32_t VISION_TIMEOUT_MS = 350;
+static constexpr uint8_t INPUT_BUTTON_COUNT = 16;
 
-static QueueHandle_t rx_queue = nullptr;
+static QueueHandle_t remote_input_queue = nullptr;
+static host_comm::input remote_input_state;
 static uint8_t rx_buf[256];
 static uint32_t rx_len = 0;
 static uint8_t tx_buf[160];
@@ -28,13 +25,16 @@ static uint32_t vision_seq = 0;
 /* ---- 状态访问 API ---- */
 
 /**
- * @brief 获取上位机遥控输入队列
+ * @brief 读取上位机最新遥控输入快照
  *
- * @return 队列句柄
+ * @param out 输入快照输出
+ *
+ * @return 队列存在且已有快照时返回 true
  */
-QueueHandle_t host_comm::remote_queue()
+bool host_comm::peek_input(host_comm::input &out)
 {
-    return rx_queue;
+    return remote_input_queue &&
+           xQueuePeek(remote_input_queue, &out, 0) == pdTRUE;
 }
 
 /**
@@ -71,18 +71,29 @@ static void parse_xbox(uint8_t *frame)
     if(frame[3] < 14){return;}
 
     uint8_t *p = &frame[4];
-    host_comm::remote_data data;
-    data.timestamp_us = (uint32_t)esp_timer_get_time();
-    data.buttons = (uint16_t)(p[0] | (p[1] << 8));
+    uint16_t held_buttons = (uint16_t)(p[0] | (p[1] << 8));
+    uint16_t pressed_buttons = held_buttons & (uint16_t)~remote_input_state.buttons;
+    for(uint8_t i = 0; i < INPUT_BUTTON_COUNT; i++)
+    {
+        if(pressed_buttons & (uint16_t)(1U << i))
+        {
+            remote_input_state.press_count[i]++;
+        }
+    }
+
+    remote_input_state.sequence++;
+    remote_input_state.timestamp_us = (uint32_t)esp_timer_get_time();
+    remote_input_state.buttons = held_buttons;
     for(uint8_t i = 0; i < 6; i++)
     {
         int16_t raw = (int16_t)(p[2 + i * 2] | (p[3 + i * 2] << 8));
-        data.axes[i] = (float)raw * 1.0e-3f;
+        remote_input_state.axes[i] = (float)raw * 1.0e-3f;
     }
+    remote_input_state.valid = true;
 
-    if(rx_queue)
+    if(remote_input_queue)
     {
-        xQueueOverwrite(rx_queue, &data);
+        xQueueOverwrite(remote_input_queue, &remote_input_state);
     }
 }
 
@@ -263,7 +274,13 @@ static void send_status(uint32_t tick_ms)
 void host_comm::init()
 {
     host_uart.init();
-    rx_queue = xQueueCreate(1, sizeof(host_comm::remote_data));
+    remote_input_queue = xQueueCreate(1, sizeof(host_comm::input));
+    remote_input_state = host_comm::input{};
+    remote_input_state.stream_id = 1;
+    if(remote_input_queue)
+    {
+        xQueueOverwrite(remote_input_queue, &remote_input_state);
+    }
 }
 
 /**

@@ -6,24 +6,30 @@
 namespace web_server
 {
     /**
-     * @brief 网页遥控输入快照
+     * @brief Web 模块发布的最新遥控输入状态
+     *
+     * stream_id 对应 WebSocket 控制连接代次，sequence 保留客户端协议序号，
+     * press_count 保存服务端累计接收的按钮按下次数。
      */
-    struct remote_input
+    struct input
     {
+        uint32_t stream_id = 0;
+        uint32_t sequence = 0;
         uint32_t timestamp_us = 0;
         uint16_t held_buttons = 0;
-        uint16_t pressed_buttons = 0;
+        uint16_t press_count[16]{};
         float axes[6]{};
+        bool valid = false;
     };
 
     /**
-     * @brief 读取网页遥控最新输入并消费按键边沿
+     * @brief 读取网页遥控最新输入快照
      *
      * @param out 网页遥控输入输出
      *
-     * @return 已收到过有效输入时返回 true
+     * @return 队列存在且已有快照时返回 true
      */
-    bool take_remote_input(remote_input &out);
+    bool peek_input(input &out);
 
     /**
      * @brief 初始化原生 HTTP 和 WebSocket 服务

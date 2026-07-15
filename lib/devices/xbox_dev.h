@@ -5,11 +5,21 @@
 
 namespace xbox_dev
 {
-    struct data
+    /**
+     * @brief Xbox 模块发布的最新输入状态
+     *
+     * stream_id 在连接代次变化时递增，sequence 为当前连接中的采样序号，
+     * press_count 保存各按钮累计按下次数。
+     */
+    struct input
     {
-        uint32_t timestamp_us;
-        uint16_t buttons;
-        float axes[6];
+        uint32_t stream_id = 0;
+        uint32_t sequence = 0;
+        uint32_t timestamp_us = 0;
+        uint16_t buttons = 0;
+        uint16_t press_count[16]{};
+        float axes[6]{};
+        bool valid = false;
     };
 
     struct ble_device
@@ -21,7 +31,7 @@ namespace xbox_dev
         bool connectable;
     };
 
-    QueueHandle_t queue();
+    bool peek_input(input &out);
     bool connected();
     String target_address();
     bool scan_ble(ble_device *devices, uint8_t max_count, uint8_t &count, uint32_t duration_ms);
