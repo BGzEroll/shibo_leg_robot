@@ -2,6 +2,7 @@
 
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp_bt.h>
 #include <esp_wifi.h>
 
 /* ---- WiFi 配置与运行状态 ---- */
@@ -51,6 +52,21 @@ static void finish_sleep_restore(uint32_t sequence)
 }
 
 /**
+ * @brief 获取符合 WiFi 与蓝牙共存约束的省电模式
+ *
+ * @param low_latency_requested 是否请求关闭 WiFi 省电
+ *
+ * @return 当前允许设置的 WiFi 省电模式
+ */
+static wifi_ps_type_t select_wifi_sleep_type(bool low_latency_requested)
+{
+    bool bluetooth_enabled =
+        esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_ENABLED;
+    if(low_latency_requested && !bluetooth_enabled){return WIFI_PS_NONE;}
+    return WIFI_PS_MIN_MODEM;
+}
+
+/**
  * @brief 在 WiFi 维护任务中应用最新低延迟请求
  */
 static void apply_low_latency_request()
@@ -71,7 +87,7 @@ static void apply_low_latency_request()
         return;
     }
 
-    wifi_ps_type_t target = requested ? WIFI_PS_NONE : WIFI_PS_MIN_MODEM;
+    wifi_ps_type_t target = select_wifi_sleep_type(requested);
     wifi_ps_type_t current;
     if(esp_wifi_get_ps(&current) != ESP_OK){return;}
     if(current == target)
