@@ -2,8 +2,8 @@
 
 #include "actions.h"
 #include "esp_timer.h"
-#include "esp_http_server.h"
 #include "host_comm.h"
+#include "web_server.h"
 #include "xbox.h"
 #include "xbox_dev.h"
 
@@ -18,6 +18,7 @@ struct input_snapshot
     controller::input_source source = controller::input_source::NONE;
     uint32_t timestamp_us = 0;
     uint16_t buttons = 0;
+    uint16_t pressed_buttons = 0;
     float axes[6]{};
     bool fresh = false;
 };
@@ -81,15 +82,14 @@ static input_snapshot read_snapshot()
     }
     else
     {
-        esp_http_server::remote_input_data web_data;
-        QueueHandle_t remote_queue = esp_http_server::remote_queue();
-        if(remote_queue &&
-           xQueuePeek(remote_queue, &web_data, 0) == pdTRUE &&
+        web_server::remote_input web_data;
+        if(web_server::take_remote_input(web_data) &&
            input_fresh(web_data.timestamp_us, now_us))
         {
             snapshot.source = controller::input_source::WEB;
             snapshot.timestamp_us = web_data.timestamp_us;
-            snapshot.buttons = web_data.buttons;
+            snapshot.buttons = web_data.held_buttons;
+            snapshot.pressed_buttons = web_data.pressed_buttons;
             memcpy(snapshot.axes, web_data.axes, sizeof(snapshot.axes));
             snapshot.fresh = true;
             return snapshot;
@@ -275,7 +275,11 @@ void controller::input_router::update(controller::mode_id mode, float max_linear
     }
 
     uint16_t pressed_buttons = 0;
-    if(snapshot.source == last_source && last_fresh && snapshot.fresh)
+    if(snapshot.source == controller::input_source::WEB)
+    {
+        pressed_buttons = snapshot.pressed_buttons;
+    }
+    else if(snapshot.source == last_source && last_fresh && snapshot.fresh)
     {
         pressed_buttons = held_buttons & (uint16_t)(~last_buttons);
     }

@@ -17,6 +17,7 @@ static constexpr wifi_power_t WIFI_TX_POWER = WIFI_POWER_8_5dBm;
 
 static bool portal_active = false;
 static bool pending_sta_only = false;
+static bool low_latency_mode = false;
 static uint32_t sta_only_at_ms = 0;
 
 /* ---- WiFi 内部流程 ---- */
@@ -26,7 +27,7 @@ static uint32_t sta_only_at_ms = 0;
  */
 static void apply_low_power_settings()
 {
-    WiFi.setSleep(true);
+    WiFi.setSleep(!low_latency_mode);
     WiFi.setTxPower(WIFI_TX_POWER);
 }
 
@@ -175,6 +176,18 @@ bool wifi_dev::connect_and_save(const String &ssid, const String &password, IPAd
 IPAddress wifi_dev::station_ip()
 {
     return WiFi.localIP();
+}
+
+/**
+ * @brief 切换网页遥控使用的低延迟 WiFi 模式
+ *
+ * @param enabled 是否关闭 WiFi 休眠以降低遥控延迟
+ */
+void wifi_dev::set_low_latency_mode(bool enabled)
+{
+    if(low_latency_mode == enabled){return;}
+    low_latency_mode = enabled;
+    WiFi.setSleep(!low_latency_mode);
 }
 
 /**

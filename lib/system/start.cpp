@@ -9,7 +9,7 @@
 #include "led_dev.h"
 #include "rgb_dev.h"
 #include "xbox_dev.h"
-#include "esp_http_server.h"
+#include "web_server.h"
 
 /**
  * @brief 创建系统中的 RTOS 任务
@@ -23,7 +23,7 @@ static void task_list()
     xTaskCreatePinnedToCore(balance_core::core_task_entry, "balance_io_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(balance_core::control_task_entry, "balance_ctl_task", 4096, nullptr, 5, nullptr, 0);
     xTaskCreatePinnedToCore(host_comm::task_entry, "host_comm_task", 4096, nullptr, 3, nullptr, 0);
-    xTaskCreatePinnedToCore(esp_http_server::task_entry, "http_server_task", 4096, nullptr, 2, nullptr, 0);
+    xTaskCreatePinnedToCore(web_server::task_entry, "web_service_task", 2048, nullptr, 2, nullptr, 0);
 }
 
 /**
@@ -37,7 +37,7 @@ void start_init_all()
     led_dev::init();
     rgb_dev::init();
     xbox_dev::init();
-    esp_http_server::init();
+    web_server::init();
     controller::init();
 
     task_list();
