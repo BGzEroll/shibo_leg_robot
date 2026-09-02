@@ -1,14 +1,14 @@
 #include <Arduino.h>
 
-#include "start.h"
+#include "app.h"
 
 /**
  * @brief Arduino 启动入口
  */
 void setup()
 {
-    start_init_all();
-    vTaskDelete(nullptr);    // 关闭 arduino 的 loop 任务
+    app::start();
+    vTaskDelete(nullptr);
 }
 
 /**
