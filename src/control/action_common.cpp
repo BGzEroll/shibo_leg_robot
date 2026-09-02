@@ -3,6 +3,14 @@
 #include "hw/servo.h"
 #include <math.h>
 
+namespace action = control::action;
+namespace action_internal = control::action::internal;
+
+using action::action_runtime;
+using action::context;
+using action::leg_runtime;
+using control::balance_mode;
+
 /* ---- 公共动作参数 ---- */
 
 static constexpr float LEG_HEIGHT_BASE_MIN = -10.0f;
@@ -69,10 +77,10 @@ void control::action::internal::set_torque(uint8_t type)
  *
  * @param leg 腿部运行状态
  */
-void control::action::internal::reset_leg(control::action::leg_runtime &leg)
+void control::action::internal::reset_leg(leg_runtime &leg)
 {
     leg.roll_adjust = 0.0f;
-    leg.height_base = (float)control::action::LEG_HEIGHT_BASE;
+    leg.height_base = (float)action::LEG_HEIGHT_BASE;
     leg.reset_roll_pid();
 }
 
@@ -82,7 +90,7 @@ void control::action::internal::reset_leg(control::action::leg_runtime &leg)
  * @param ctx 动作输入输出上下文
  * @param height_count_offset 腿高目标的舵机计数偏移量
  */
-void control::action::internal::run_leg_control(control::action::context &ctx,
+void control::action::internal::run_leg_control(context &ctx,
     float height_count_offset)
 {
     ctx.leg.roll_adjust += (float)ctx.input.roll_direction * 0.025f;
@@ -115,7 +123,7 @@ void control::action::internal::run_leg_control(control::action::context &ctx,
  * @return 可以退出恢复阶段时返回 true
  */
 bool control::action::internal::recover_ready(
-    control::action::action_runtime &runtime, const control::status &status,
+    action_runtime &runtime, const control::status &status,
     uint32_t tick_ms, float pitch_limit, float rate_limit, uint32_t hold_ms,
     uint32_t timeout_ms)
 {
@@ -140,12 +148,12 @@ bool control::action::internal::recover_ready(
  * @return 恢复平衡命令
  */
 control::balance_command control::action::internal::recover_command(
-    control::action::action_runtime &runtime, control::action::context &ctx)
+    action_runtime &runtime, context &ctx)
 {
     control::balance_command command;
-    command.mode = control::balance_mode::RECOVER;
+    command.mode = balance_mode::RECOVER;
     command.recover_blend = constrain(
         (float)runtime.elapsed * 1.0e-3f / 0.22f, 0.0f, 1.0f);
-    run_leg_control(ctx);
+    action_internal::run_leg_control(ctx);
     return command;
 }

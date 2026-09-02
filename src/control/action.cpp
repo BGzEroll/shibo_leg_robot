@@ -3,6 +3,19 @@
 #include "action_internal.h"
 #include "hw/servo.h"
 
+namespace action = control::action;
+namespace action_internal = control::action::internal;
+
+using action::action_runtime;
+using action::context;
+using action::jump_direction;
+using action::mode;
+using action::phase;
+using action_internal::step_result;
+using action_internal::transition;
+using control::action_request;
+using control::balance_mode;
+
 /* ---- BOOT、BALANCE、STOP ---- */
 
 /**
@@ -14,50 +27,50 @@
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result control::action::internal::step_boot(
-    control::action::state &state, control::action::context &ctx, uint32_t tick_ms)
+step_result control::action::internal::step_boot(
+    action::state &state, context &ctx, uint32_t tick_ms)
 {
-    control::action::internal::step_result result;
-    control::action::action_runtime &runtime = state.boot;
+    step_result result;
+    action_runtime &runtime = state.boot;
     switch(runtime.current_phase)
     {
-        case control::action::phase::PREPARE:
-            control::action::internal::set_torque(0);
-            runtime.current_phase = control::action::phase::WAIT_SIGNAL;
+        case phase::PREPARE:
+            action_internal::set_torque(0);
+            runtime.current_phase = phase::WAIT_SIGNAL;
             break;
 
-        case control::action::phase::WAIT_SIGNAL:
-            if(ctx.input.action == control::action_request::BOOT_CONFIRM &&
+        case phase::WAIT_SIGNAL:
+            if(ctx.input.action == action_request::BOOT_CONFIRM &&
                ctx.battery_valid && !ctx.battery_low)
             {
-                runtime.current_phase = control::action::phase::INIT;
+                runtime.current_phase = phase::INIT;
             }
             break;
 
-        case control::action::phase::INIT:
-            control::action::internal::set_pose(
+        case phase::INIT:
+            action_internal::set_pose(
                 hw::servo::LEG_LEFT_MIN, hw::servo::LEG_RIGHT_MIN, 450, 250);
-            control::action::internal::reset_leg(ctx.leg);
-            runtime.current_phase = control::action::phase::INIT_PREPARE;
+            action_internal::reset_leg(ctx.leg);
+            runtime.current_phase = phase::INIT_PREPARE;
             break;
 
-        case control::action::phase::INIT_PREPARE:
+        case phase::INIT_PREPARE:
             runtime.timer += tick_ms;
             if(runtime.timer >= 350)
             {
                 runtime.timer = 0;
                 runtime.elapsed = 0;
                 runtime.ready_timer = 0;
-                runtime.current_phase = control::action::phase::INIT_RECOVER;
+                runtime.current_phase = phase::INIT_RECOVER;
             }
             break;
 
-        case control::action::phase::INIT_RECOVER:
-            result.balance = control::action::internal::recover_command(runtime, ctx);
-            if(control::action::internal::recover_ready(
+        case phase::INIT_RECOVER:
+            result.balance = action_internal::recover_command(runtime, ctx);
+            if(action_internal::recover_ready(
                    runtime, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                result.next = control::action::internal::transition::DONE;
+                result.next = transition::DONE;
             }
             break;
 
@@ -76,53 +89,53 @@ control::action::internal::step_result control::action::internal::step_boot(
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result control::action::internal::step_balance(
-    control::action::state &, control::action::context &ctx, uint32_t)
+step_result control::action::internal::step_balance(
+    action::state &, context &ctx, uint32_t)
 {
-    control::action::internal::step_result result;
-    result.balance.mode = control::balance_mode::BALANCE;
+    step_result result;
+    result.balance.mode = balance_mode::BALANCE;
     result.balance.steering = true;
     result.balance.linear_vel = ctx.input.linear;
     result.balance.yaw_rate = ctx.input.yaw;
-    control::action::internal::run_leg_control(ctx);
+    action_internal::run_leg_control(ctx);
 
-    if(ctx.input.reset_leg){control::action::internal::reset_leg(ctx.leg);}
+    if(ctx.input.reset_leg){action_internal::reset_leg(ctx.leg);}
     switch(ctx.input.action)
     {
-        case control::action_request::RESET_BALANCE:
-            result.next = control::action::internal::transition::RESET_BALANCE;
+        case action_request::RESET_BALANCE:
+            result.next = transition::RESET_BALANCE;
             break;
-        case control::action_request::SIT:
-            result.next = control::action::internal::transition::SIT;
+        case action_request::SIT:
+            result.next = transition::SIT;
             break;
-        case control::action_request::MIDDLE_CALIBRATION:
-            result.next = control::action::internal::transition::MIDDLE_CALIBRATION;
+        case action_request::MIDDLE_CALIBRATION:
+            result.next = transition::MIDDLE_CALIBRATION;
             break;
-        case control::action_request::JUMP_IN_PLACE:
-            result.next = control::action::internal::transition::JUMP;
-            result.jump = control::action::jump_direction::IN_PLACE;
+        case action_request::JUMP_IN_PLACE:
+            result.next = transition::JUMP;
+            result.jump = jump_direction::IN_PLACE;
             break;
-        case control::action_request::JUMP_FORWARD:
-            result.next = control::action::internal::transition::JUMP;
-            result.jump = control::action::jump_direction::FORWARD;
+        case action_request::JUMP_FORWARD:
+            result.next = transition::JUMP;
+            result.jump = jump_direction::FORWARD;
             break;
-        case control::action_request::JUMP_BACKWARD:
-            result.next = control::action::internal::transition::JUMP;
-            result.jump = control::action::jump_direction::BACKWARD;
+        case action_request::JUMP_BACKWARD:
+            result.next = transition::JUMP;
+            result.jump = jump_direction::BACKWARD;
             break;
-        case control::action_request::JUMP_LEFT:
-            result.next = control::action::internal::transition::JUMP;
-            result.jump = control::action::jump_direction::TURN_LEFT;
+        case action_request::JUMP_LEFT:
+            result.next = transition::JUMP;
+            result.jump = jump_direction::TURN_LEFT;
             break;
-        case control::action_request::JUMP_RIGHT:
-            result.next = control::action::internal::transition::JUMP;
-            result.jump = control::action::jump_direction::TURN_RIGHT;
+        case action_request::JUMP_RIGHT:
+            result.next = transition::JUMP;
+            result.jump = jump_direction::TURN_RIGHT;
             break;
-        case control::action_request::KICK_PLACE:
-            result.next = control::action::internal::transition::KICK_PLACE;
+        case action_request::KICK_PLACE:
+            result.next = transition::KICK_PLACE;
             break;
-        case control::action_request::KICK_RUN:
-            result.next = control::action::internal::transition::KICK_RUN;
+        case action_request::KICK_RUN:
+            result.next = transition::KICK_RUN;
             break;
         default:
             break;
@@ -139,13 +152,13 @@ control::action::internal::step_result control::action::internal::step_balance(
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result control::action::internal::step_stop(
-    control::action::state &, control::action::context &ctx, uint32_t)
+step_result control::action::internal::step_stop(
+    action::state &, context &ctx, uint32_t)
 {
-    control::action::internal::step_result result;
-    if(ctx.input.action == control::action_request::BOOT)
+    step_result result;
+    if(ctx.input.action == action_request::BOOT)
     {
-        result.next = control::action::internal::transition::BOOT;
+        result.next = transition::BOOT;
     }
     return result;
 }
@@ -160,36 +173,35 @@ control::action::internal::step_result control::action::internal::step_stop(
  * @param jump 跳跃方向
  */
 void control::action::internal::enter_mode(
-    control::action::state &state, control::action::mode next_mode,
-    control::action::jump_direction jump)
+    action::state &state, mode next_mode, jump_direction jump)
 {
-    control::action::mode previous = state.current_mode;
+    mode previous = state.current_mode;
     state.current_mode = next_mode;
     switch(next_mode)
     {
-        case control::action::mode::BOOT:
-            state.boot = control::action::action_runtime{};
+        case mode::BOOT:
+            state.boot = action_runtime{};
             break;
-        case control::action::mode::SIT:
-            state.sit = control::action::action_runtime{};
+        case mode::SIT:
+            state.sit = action_runtime{};
             break;
-        case control::action::mode::JUMP:
-            state.jump = control::action::action_runtime{};
-            control::action::internal::set_jump_direction(state.jump_data, jump);
+        case mode::JUMP:
+            state.jump = action_runtime{};
+            action_internal::set_jump_direction(state.jump_data, jump);
             break;
-        case control::action::mode::KICK_PLACE:
-            state.kick_place = control::action::action_runtime{};
-            state.kick_place_data = control::action::kick_runtime{};
+        case mode::KICK_PLACE:
+            state.kick_place = action_runtime{};
+            state.kick_place_data = action::kick_runtime{};
             break;
-        case control::action::mode::KICK_RUN:
-            state.kick_run = control::action::action_runtime{};
-            state.kick_run_data = control::action::kick_runtime{};
+        case mode::KICK_RUN:
+            state.kick_run = action_runtime{};
+            state.kick_run_data = action::kick_runtime{};
             break;
-        case control::action::mode::MIDDLE_CALIBRATION:
+        case mode::MIDDLE_CALIBRATION:
             state.middle_calibration_success = false;
-            if(previous != control::action::mode::SIT)
+            if(previous != mode::SIT)
             {
-                state.sit = control::action::action_runtime{};
+                state.sit = action_runtime{};
             }
             else
             {
@@ -198,8 +210,8 @@ void control::action::internal::enter_mode(
                 state.sit.elapsed = 0;
             }
             break;
-        case control::action::mode::BALANCE:
-        case control::action::mode::STOP:
+        case mode::BALANCE:
+        case mode::STOP:
         default:
             break;
     }
@@ -212,7 +224,7 @@ void control::action::internal::enter_mode(
  * @param ctx 动作上下文
  */
 void control::action::internal::update_sit_exit_lock(
-    control::action::state &state, const control::action::context &ctx)
+    action::state &state, const context &ctx)
 {
     if(ctx.battery_valid && !ctx.battery_low)
     {
@@ -220,8 +232,8 @@ void control::action::internal::update_sit_exit_lock(
         return;
     }
 
-    bool sit_mode = state.current_mode == control::action::mode::SIT ||
-        state.current_mode == control::action::mode::MIDDLE_CALIBRATION;
+    bool sit_mode = state.current_mode == mode::SIT ||
+        state.current_mode == mode::MIDDLE_CALIBRATION;
     if(sit_mode && ctx.battery_valid && ctx.battery_low)
     {
         state.sit_exit_locked = true;
@@ -235,81 +247,74 @@ void control::action::internal::update_sit_exit_lock(
  * @param result 动作结果
  */
 void control::action::internal::apply_transition(
-    control::action::state &state, const control::action::internal::step_result &result)
+    action::state &state, const step_result &result)
 {
     switch(result.next)
     {
-        case control::action::internal::transition::DONE:
-            if(state.current_mode == control::action::mode::BOOT ||
-               state.current_mode == control::action::mode::JUMP ||
-               state.current_mode == control::action::mode::KICK_PLACE ||
-               state.current_mode == control::action::mode::KICK_RUN)
+        case transition::DONE:
+            if(state.current_mode == mode::BOOT ||
+               state.current_mode == mode::JUMP ||
+               state.current_mode == mode::KICK_PLACE ||
+               state.current_mode == mode::KICK_RUN)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::BALANCE);
+                action_internal::enter_mode(state, mode::BALANCE);
             }
-            else if((state.current_mode == control::action::mode::SIT ||
-                     state.current_mode == control::action::mode::MIDDLE_CALIBRATION) &&
+            else if((state.current_mode == mode::SIT ||
+                     state.current_mode == mode::MIDDLE_CALIBRATION) &&
                     !state.sit_exit_locked)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::BALANCE);
+                action_internal::enter_mode(state, mode::BALANCE);
             }
             break;
-        case control::action::internal::transition::BOOT:
-            if(state.current_mode == control::action::mode::STOP &&
+        case transition::BOOT:
+            if(state.current_mode == mode::STOP &&
                !state.sit_exit_locked)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::BOOT);
+                action_internal::enter_mode(state, mode::BOOT);
             }
             break;
-        case control::action::internal::transition::RESET_BALANCE:
-            if(state.current_mode == control::action::mode::BALANCE)
+        case transition::RESET_BALANCE:
+            if(state.current_mode == mode::BALANCE)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::BALANCE);
+                action_internal::enter_mode(state, mode::BALANCE);
             }
             break;
-        case control::action::internal::transition::SIT:
-            if(state.current_mode == control::action::mode::BALANCE)
+        case transition::SIT:
+            if(state.current_mode == mode::BALANCE)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::SIT);
+                action_internal::enter_mode(state, mode::SIT);
             }
             break;
-        case control::action::internal::transition::MIDDLE_CALIBRATION:
-            if(state.current_mode == control::action::mode::BALANCE ||
-               state.current_mode == control::action::mode::SIT)
+        case transition::MIDDLE_CALIBRATION:
+            if(state.current_mode == mode::BALANCE ||
+               state.current_mode == mode::SIT)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::MIDDLE_CALIBRATION);
+                action_internal::enter_mode(
+                    state, mode::MIDDLE_CALIBRATION);
             }
             break;
-        case control::action::internal::transition::JUMP:
-            if(state.current_mode == control::action::mode::BALANCE)
+        case transition::JUMP:
+            if(state.current_mode == mode::BALANCE)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::JUMP, result.jump);
+                action_internal::enter_mode(
+                    state, mode::JUMP, result.jump);
             }
             break;
-        case control::action::internal::transition::KICK_PLACE:
-            if(state.current_mode == control::action::mode::BALANCE ||
-               state.current_mode == control::action::mode::KICK_RUN)
+        case transition::KICK_PLACE:
+            if(state.current_mode == mode::BALANCE ||
+               state.current_mode == mode::KICK_RUN)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::KICK_PLACE);
+                action_internal::enter_mode(state, mode::KICK_PLACE);
             }
             break;
-        case control::action::internal::transition::KICK_RUN:
-            if(state.current_mode == control::action::mode::BALANCE ||
-               state.current_mode == control::action::mode::KICK_PLACE)
+        case transition::KICK_RUN:
+            if(state.current_mode == mode::BALANCE ||
+               state.current_mode == mode::KICK_PLACE)
             {
-                control::action::internal::enter_mode(
-                    state, control::action::mode::KICK_RUN);
+                action_internal::enter_mode(state, mode::KICK_RUN);
             }
             break;
-        case control::action::internal::transition::NONE:
+        case transition::NONE:
         default:
             break;
     }
@@ -322,10 +327,10 @@ void control::action::internal::apply_transition(
  *
  * @param state 动作状态
  */
-void control::action::init(control::action::state &state)
+void control::action::init(action::state &state)
 {
-    state = control::action::state{};
-    state.current_mode = control::action::mode::BOOT;
+    state = action::state{};
+    state.current_mode = mode::BOOT;
 }
 
 /**
@@ -335,8 +340,7 @@ void control::action::init(control::action::state &state)
  *
  * @return 当前动作模式
  */
-control::action::mode control::action::current_mode(
-    const control::action::state &state)
+mode control::action::current_mode(const action::state &state)
 {
     return state.current_mode;
 }
@@ -351,51 +355,50 @@ control::action::mode control::action::current_mode(
  * @return 统一平衡命令
  */
 control::balance_command control::action::step(
-    control::action::state &state, control::action::context &ctx, uint32_t tick_ms)
+    action::state &state, context &ctx, uint32_t tick_ms)
 {
-    control::action::internal::update_sit_exit_lock(state, ctx);
+    action_internal::update_sit_exit_lock(state, ctx);
 
-    if(state.current_mode != control::action::mode::STOP &&
-       ctx.input.action == control::action_request::STOP)
+    if(state.current_mode != mode::STOP &&
+       ctx.input.action == action_request::STOP)
     {
-        control::action::internal::enter_mode(state, control::action::mode::STOP);
+        action_internal::enter_mode(state, mode::STOP);
         return control::balance_command{};
     }
 
-    control::action::internal::step_result result;
+    step_result result;
     switch(state.current_mode)
     {
-        case control::action::mode::BOOT:
-            result = control::action::internal::step_boot(state, ctx, tick_ms);
+        case mode::BOOT:
+            result = action_internal::step_boot(state, ctx, tick_ms);
             break;
-        case control::action::mode::BALANCE:
-            result = control::action::internal::step_balance(state, ctx, tick_ms);
+        case mode::BALANCE:
+            result = action_internal::step_balance(state, ctx, tick_ms);
             break;
-        case control::action::mode::SIT:
-            result = control::action::internal::step_sit(state, ctx, tick_ms);
+        case mode::SIT:
+            result = action_internal::step_sit(state, ctx, tick_ms);
             break;
-        case control::action::mode::JUMP:
-            result = control::action::internal::step_jump(state, ctx, tick_ms);
+        case mode::JUMP:
+            result = action_internal::step_jump(state, ctx, tick_ms);
             break;
-        case control::action::mode::STOP:
-            result = control::action::internal::step_stop(state, ctx, tick_ms);
+        case mode::STOP:
+            result = action_internal::step_stop(state, ctx, tick_ms);
             break;
-        case control::action::mode::KICK_PLACE:
-            result = control::action::internal::step_kick(state, ctx, tick_ms, false);
+        case mode::KICK_PLACE:
+            result = action_internal::step_kick(state, ctx, tick_ms, false);
             break;
-        case control::action::mode::KICK_RUN:
-            result = control::action::internal::step_kick(state, ctx, tick_ms, true);
+        case mode::KICK_RUN:
+            result = action_internal::step_kick(state, ctx, tick_ms, true);
             break;
-        case control::action::mode::MIDDLE_CALIBRATION:
-            result = control::action::internal::step_middle_calibration(
+        case mode::MIDDLE_CALIBRATION:
+            result = action_internal::step_middle_calibration(
                 state, ctx, tick_ms);
             break;
         default:
-            control::action::internal::enter_mode(
-                state, control::action::mode::STOP);
+            action_internal::enter_mode(state, mode::STOP);
             break;
     }
 
-    control::action::internal::apply_transition(state, result);
+    action_internal::apply_transition(state, result);
     return result.balance;
 }

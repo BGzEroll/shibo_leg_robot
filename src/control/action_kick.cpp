@@ -3,6 +3,18 @@
 #include "hw/servo.h"
 #include <math.h>
 
+namespace action = control::action;
+namespace action_internal = control::action::internal;
+
+using action::action_runtime;
+using action::context;
+using action::kick_runtime;
+using action::phase;
+using action_internal::step_result;
+using action_internal::transition;
+using control::action_request;
+using control::balance_mode;
+
 /* ---- KICK 参数 ---- */
 
 static constexpr float CAM_INITIAL_ANGLE = 45.0f;
@@ -42,7 +54,7 @@ static constexpr float KICK_LEG_HEIGHT_COUNT_OFFSET = 50.0f;
  * @param data 踢球运行状态
  * @param angle 目标角度
  */
-static void set_camera(control::action::kick_runtime &data, float angle)
+static void set_camera(kick_runtime &data, float angle)
 {
     data.cam_angle = constrain(angle, (float)hw::servo::CAMERA_MIN,
         (float)hw::servo::CAMERA_MAX);
@@ -55,7 +67,7 @@ static void set_camera(control::action::kick_runtime &data, float angle)
  * @param data 踢球运行状态
  * @param angle 目标角度
  */
-static void set_frontier(control::action::kick_runtime &data, uint16_t angle)
+static void set_frontier(kick_runtime &data, uint16_t angle)
 {
     angle = constrain(angle, hw::servo::FRONTIER_MIN, hw::servo::FRONTIER_MAX);
     if(data.frontier_angle == angle){return;}
@@ -70,14 +82,14 @@ static void set_frontier(control::action::kick_runtime &data, uint16_t angle)
  *
  * @return 踢球基础平衡命令
  */
-static control::balance_command kick_base_command(control::action::context &ctx)
+static control::balance_command kick_base_command(context &ctx)
 {
     control::balance_command command;
-    command.mode = control::balance_mode::BALANCE;
+    command.mode = balance_mode::BALANCE;
     command.steering = true;
     command.linear_vel = ctx.input.linear;
     command.yaw_rate = ctx.input.yaw;
-    control::action::internal::run_leg_control(ctx, KICK_LEG_HEIGHT_COUNT_OFFSET);
+    action_internal::run_leg_control(ctx, KICK_LEG_HEIGHT_COUNT_OFFSET);
     return command;
 }
 
@@ -89,7 +101,7 @@ static control::balance_command kick_base_command(control::action::context &ctx)
  *
  * @return 新视觉步时返回 true
  */
-static bool consume_vision_step(control::action::kick_runtime &data, uint32_t sequence)
+static bool consume_vision_step(kick_runtime &data, uint32_t sequence)
 {
     if(data.last_vision_seq == sequence){return false;}
     data.last_vision_seq = sequence;
@@ -102,7 +114,7 @@ static bool consume_vision_step(control::action::kick_runtime &data, uint32_t se
  * @param data 踢球运行状态
  * @param dy 视觉上下偏差
  */
-static void aim_camera(control::action::kick_runtime &data, int16_t dy)
+static void aim_camera(kick_runtime &data, int16_t dy)
 {
     if(abs((int32_t)dy) <= CAM_AIM_DEADBAND)
     {
@@ -154,7 +166,7 @@ static float aim_yaw_rate(int16_t dx)
  *
  * @return 限幅后的转向速度
  */
-static float combine_yaw_rate(const control::action::context &ctx,
+static float combine_yaw_rate(const context &ctx,
     float vision_yaw_rate)
 {
     return constrain(ctx.input.yaw + vision_yaw_rate,
@@ -168,7 +180,7 @@ static float combine_yaw_rate(const control::action::context &ctx,
  *
  * @return 手动线速度有效时返回 true
  */
-static bool manual_linear_active(const control::action::context &ctx)
+static bool manual_linear_active(const context &ctx)
 {
     return fabsf(ctx.input.linear) > ctx.max_linear_vel * 0.05f;
 }
@@ -178,7 +190,7 @@ static bool manual_linear_active(const control::action::context &ctx)
  *
  * @param data 踢球运行状态
  */
-static void reset_lost_target(control::action::kick_runtime &data)
+static void reset_lost_target(kick_runtime &data)
 {
     data.cam_error = 0.0f;
     data.cam_rate = 0.0f;
@@ -194,7 +206,7 @@ static void reset_lost_target(control::action::kick_runtime &data)
  *
  * @param data 踢球运行状态
  */
-static void ready_kick(control::action::kick_runtime &data)
+static void ready_kick(kick_runtime &data)
 {
     if(!data.kicking){set_frontier(data, FRONTIER_READY_ANGLE);}
 }
@@ -204,7 +216,7 @@ static void ready_kick(control::action::kick_runtime &data)
  *
  * @param data 踢球运行状态
  */
-static void trigger_kick(control::action::kick_runtime &data)
+static void trigger_kick(kick_runtime &data)
 {
     set_frontier(data, FRONTIER_KICK_ANGLE);
     data.kicking = true;
@@ -219,7 +231,7 @@ static void trigger_kick(control::action::kick_runtime &data)
  *
  * @return 允许触发时返回 true
  */
-static bool can_trigger_kick(const control::action::kick_runtime &data)
+static bool can_trigger_kick(const kick_runtime &data)
 {
     return !data.kicking && data.kick_cooldown_timer == 0;
 }
@@ -230,7 +242,7 @@ static bool can_trigger_kick(const control::action::kick_runtime &data)
  * @param data 踢球运行状态
  * @param tick_ms 周期，单位毫秒
  */
-static void update_kick_hold(control::action::kick_runtime &data, uint32_t tick_ms)
+static void update_kick_hold(kick_runtime &data, uint32_t tick_ms)
 {
     if(!data.kicking){return;}
     data.kick_timer += tick_ms;
@@ -247,7 +259,7 @@ static void update_kick_hold(control::action::kick_runtime &data, uint32_t tick_
  * @param data 踢球运行状态
  * @param tick_ms 周期，单位毫秒
  */
-static void update_kick_cooldown(control::action::kick_runtime &data, uint32_t tick_ms)
+static void update_kick_cooldown(kick_runtime &data, uint32_t tick_ms)
 {
     if(!data.kick_cooldown_timer){return;}
     if(data.kick_cooldown_timer <= tick_ms)
@@ -264,14 +276,13 @@ static void update_kick_cooldown(control::action::kick_runtime &data, uint32_t t
  * @param runtime 动作运行状态
  * @param data 踢球运行状态
  */
-static void begin_kick_exit(control::action::action_runtime &runtime,
-    control::action::kick_runtime &data)
+static void begin_kick_exit(action_runtime &runtime, kick_runtime &data)
 {
     set_frontier(data, FRONTIER_KICK_ANGLE);
     data.kicking = false;
     data.kick_timer = 0;
     runtime.timer = 0;
-    runtime.current_phase = control::action::phase::EXIT_PREPARE;
+    runtime.current_phase = phase::EXIT_PREPARE;
 }
 
 /**
@@ -284,15 +295,14 @@ static void begin_kick_exit(control::action::action_runtime &runtime,
  *
  * @return 仍处于退出流程时返回 true
  */
-static bool update_kick_exit(control::action::action_runtime &runtime,
-    control::action::context &ctx,
-    control::action::internal::step_result &result, uint32_t tick_ms)
+static bool update_kick_exit(action_runtime &runtime, context &ctx,
+    step_result &result, uint32_t tick_ms)
 {
-    if(runtime.current_phase != control::action::phase::EXIT_PREPARE){return false;}
+    if(runtime.current_phase != phase::EXIT_PREPARE){return false;}
     runtime.timer += tick_ms;
     if(runtime.timer < KICK_EXIT_DELAY_MS){return true;}
-    control::action::internal::reset_leg(ctx.leg);
-    result.next = control::action::internal::transition::DONE;
+    action_internal::reset_leg(ctx.leg);
+    result.next = transition::DONE;
     return true;
 }
 
@@ -303,13 +313,13 @@ static bool update_kick_exit(control::action::action_runtime &runtime,
  * @param data 踢球运行状态
  * @param ctx 动作上下文
  */
-static void prepare_kick(control::action::action_runtime &runtime,
-    control::action::kick_runtime &data, const control::action::context &ctx)
+static void prepare_kick(action_runtime &runtime, kick_runtime &data,
+    const context &ctx)
 {
-    data = control::action::kick_runtime{};
+    data = kick_runtime{};
     data.target_yaw = ctx.status.yaw_angle;
     set_camera(data, CAM_INITIAL_ANGLE);
-    runtime.current_phase = control::action::phase::MOVING;
+    runtime.current_phase = phase::MOVING;
 }
 
 /**
@@ -322,35 +332,34 @@ static void prepare_kick(control::action::action_runtime &runtime,
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result control::action::internal::step_kick(
-    control::action::state &state, control::action::context &ctx,
+step_result control::action::internal::step_kick(
+    action::state &state, context &ctx,
     uint32_t tick_ms, bool run_mode)
 {
-    control::action::internal::step_result result;
-    control::action::action_runtime &runtime = run_mode ? state.kick_run : state.kick_place;
-    control::action::kick_runtime &data = run_mode ?
+    step_result result;
+    action_runtime &runtime = run_mode ? state.kick_run : state.kick_place;
+    kick_runtime &data = run_mode ?
         state.kick_run_data : state.kick_place_data;
     result.balance = kick_base_command(ctx);
 
-    if(ctx.input.action == control::action_request::KICK_EXIT)
+    if(ctx.input.action == action_request::KICK_EXIT)
     {
         begin_kick_exit(runtime, data);
         return result;
     }
-    if(runtime.current_phase != control::action::phase::EXIT_PREPARE)
+    if(runtime.current_phase != phase::EXIT_PREPARE)
     {
-        control::action_request toggle = run_mode ?
-            control::action_request::KICK_PLACE : control::action_request::KICK_RUN;
+        action_request toggle = run_mode ?
+            action_request::KICK_PLACE : action_request::KICK_RUN;
         if(ctx.input.action == toggle)
         {
             result.next = run_mode ?
-                control::action::internal::transition::KICK_PLACE :
-                control::action::internal::transition::KICK_RUN;
+                transition::KICK_PLACE : transition::KICK_RUN;
             return result;
         }
     }
     if(update_kick_exit(runtime, ctx, result, tick_ms)){return result;}
-    if(runtime.current_phase == control::action::phase::PREPARE)
+    if(runtime.current_phase == phase::PREPARE)
     {
         prepare_kick(runtime, data, ctx);
     }
@@ -374,7 +383,7 @@ control::action::internal::step_result control::action::internal::step_kick(
         data.post_timer += tick_ms;
         if(data.post_timer < RUN_AFTER_KICK_MS)
         {
-            float error = control::action::internal::angle_error(
+            float error = action_internal::angle_error(
                 data.target_yaw, ctx.status.yaw_angle);
             if(fabsf(error) < YAW_ALIGN_LIMIT)
             {

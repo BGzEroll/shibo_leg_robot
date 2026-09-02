@@ -3,6 +3,17 @@
 #include "hw/servo.h"
 #include <math.h>
 
+namespace action = control::action;
+namespace action_internal = control::action::internal;
+
+using action::action_runtime;
+using action::context;
+using action::phase;
+using action_internal::step_result;
+using action_internal::transition;
+using control::action_request;
+using control::balance_mode;
+
 /* ---- SIT 与中位校准参数 ---- */
 
 static constexpr int16_t SERVO_MIDDLE_COUNT = 2048;
@@ -23,7 +34,7 @@ static constexpr uint32_t MIDDLE_CALIBRATION_PREPARE_WAIT_MS =
  *
  * @return 左右腿舵机都接近中位时返回 true
  */
-static bool servo_middle_ready(const control::action::context &ctx)
+static bool servo_middle_ready(const context &ctx)
 {
     int16_t left_error = abs(ctx.servo_left_position - SERVO_MIDDLE_COUNT);
     int16_t right_error = abs(ctx.servo_right_position - SERVO_MIDDLE_COUNT);
@@ -37,7 +48,7 @@ static bool servo_middle_ready(const control::action::context &ctx)
  */
 static void set_sit_direct_output(control::balance_command &command)
 {
-    command.mode = control::balance_mode::DIRECT;
+    command.mode = balance_mode::DIRECT;
     command.direct_left = -0.05f;
     command.direct_right = -0.05f;
 }
@@ -50,12 +61,12 @@ static void set_sit_direct_output(control::balance_command &command)
  * @return 允许进入时返回 true
  */
 static bool sit_phase_can_enter_middle_calibration(
-    control::action::phase current_phase)
+    phase current_phase)
 {
-    return current_phase == control::action::phase::PREPARE ||
-           current_phase == control::action::phase::INIT_PREPARE ||
-           current_phase == control::action::phase::MOVING ||
-           current_phase == control::action::phase::DONE;
+    return current_phase == phase::PREPARE ||
+           current_phase == phase::INIT_PREPARE ||
+           current_phase == phase::MOVING ||
+           current_phase == phase::DONE;
 }
 
 /**
@@ -65,12 +76,12 @@ static bool sit_phase_can_enter_middle_calibration(
  *
  * @return 属于中位校准阶段时返回 true
  */
-static bool is_middle_calibration_phase(control::action::phase current_phase)
+static bool is_middle_calibration_phase(phase current_phase)
 {
-    return current_phase == control::action::phase::CALIBRATION_WAIT ||
-           current_phase == control::action::phase::CALIBRATION_RIGHT_OFF ||
-           current_phase == control::action::phase::CALIBRATION_APPLY ||
-           current_phase == control::action::phase::CALIBRATION_DONE;
+    return current_phase == phase::CALIBRATION_WAIT ||
+           current_phase == phase::CALIBRATION_RIGHT_OFF ||
+           current_phase == phase::CALIBRATION_APPLY ||
+           current_phase == phase::CALIBRATION_DONE;
 }
 
 /**
@@ -83,133 +94,133 @@ static bool is_middle_calibration_phase(control::action::phase current_phase)
  *
  * @return 本周期动作结果
  */
-static control::action::internal::step_result step_sit_flow(
-    control::action::state &state, control::action::context &ctx,
+static step_result step_sit_flow(
+    action::state &state, context &ctx,
     uint32_t tick_ms, bool calibration)
 {
-    control::action::internal::step_result result;
-    control::action::action_runtime &runtime = state.sit;
+    step_result result;
+    action_runtime &runtime = state.sit;
 
-    bool exit_ready = runtime.current_phase == control::action::phase::DONE ||
+    bool exit_ready = runtime.current_phase == phase::DONE ||
         (calibration && is_middle_calibration_phase(runtime.current_phase));
-    if(ctx.input.action == control::action_request::EXIT &&
+    if(ctx.input.action == action_request::EXIT &&
        !state.sit_exit_locked && exit_ready)
     {
-        control::action::internal::set_pose(
+        action_internal::set_pose(
             hw::servo::LEG_LEFT_MIN, hw::servo::LEG_RIGHT_MIN, 450, 250);
-        control::action::internal::reset_leg(ctx.leg);
-        runtime.current_phase = control::action::phase::EXIT_PREPARE;
+        action_internal::reset_leg(ctx.leg);
+        runtime.current_phase = phase::EXIT_PREPARE;
         return result;
     }
 
     switch(runtime.current_phase)
     {
-        case control::action::phase::PREPARE:
-            result.balance.mode = control::balance_mode::BALANCE;
+        case phase::PREPARE:
+            result.balance.mode = balance_mode::BALANCE;
             result.balance.steering = true;
-            control::action::internal::set_pose(
+            action_internal::set_pose(
                 hw::servo::LEG_LEFT_MIN, hw::servo::LEG_RIGHT_MIN, 450, 250);
             runtime.timer = 0;
-            runtime.current_phase = control::action::phase::INIT_PREPARE;
+            runtime.current_phase = phase::INIT_PREPARE;
             break;
 
-        case control::action::phase::INIT_PREPARE:
-            result.balance.mode = control::balance_mode::BALANCE;
+        case phase::INIT_PREPARE:
+            result.balance.mode = balance_mode::BALANCE;
             result.balance.steering = true;
             if(servo_middle_ready(ctx))
             {
                 runtime.timer = 0;
-                control::action::internal::set_torque(2);
+                action_internal::set_torque(2);
                 set_sit_direct_output(result.balance);
-                runtime.current_phase = control::action::phase::MOVING;
+                runtime.current_phase = phase::MOVING;
             }
             break;
 
-        case control::action::phase::MOVING:
+        case phase::MOVING:
             runtime.timer += tick_ms;
             if(fabsf(ctx.status.pitch_angle) >= 0.25f)
             {
                 runtime.timer = 0;
-                result.balance.mode = control::balance_mode::OFF;
-                runtime.current_phase = control::action::phase::DONE;
+                result.balance.mode = balance_mode::OFF;
+                runtime.current_phase = phase::DONE;
                 break;
             }
             set_sit_direct_output(result.balance);
             break;
 
-        case control::action::phase::DONE:
+        case phase::DONE:
             if(calibration)
             {
                 runtime.timer += tick_ms;
                 if(runtime.timer >= MIDDLE_CALIBRATION_TORQUE_OFF_MS)
                 {
-                    control::action::internal::set_torque(0);
+                    action_internal::set_torque(0);
                     runtime.timer = 0;
-                    runtime.current_phase = control::action::phase::CALIBRATION_WAIT;
+                    runtime.current_phase = phase::CALIBRATION_WAIT;
                 }
             }
             else if((runtime.timer += tick_ms) >= 10000 ||
                     ctx.input.disable_leg_torque)
             {
-                control::action::internal::set_torque(0);
+                action_internal::set_torque(0);
                 runtime.timer = 10000;
             }
             break;
 
-        case control::action::phase::CALIBRATION_WAIT:
+        case phase::CALIBRATION_WAIT:
             if(!calibration){break;}
             runtime.timer += tick_ms;
             if(runtime.timer >= MIDDLE_CALIBRATION_PREPARE_WAIT_MS)
             {
                 hw::servo::set_torque(hw::servo::LEG_LEFT, 0);
                 runtime.timer = 0;
-                runtime.current_phase = control::action::phase::CALIBRATION_RIGHT_OFF;
+                runtime.current_phase = phase::CALIBRATION_RIGHT_OFF;
             }
             break;
 
-        case control::action::phase::CALIBRATION_RIGHT_OFF:
+        case phase::CALIBRATION_RIGHT_OFF:
             if(!calibration){break;}
             runtime.timer += tick_ms;
             if(runtime.timer >= MIDDLE_CALIBRATION_LEFT_OFF_DELAY_MS)
             {
                 hw::servo::set_torque(hw::servo::LEG_RIGHT, 0);
                 runtime.timer = 0;
-                runtime.current_phase = control::action::phase::CALIBRATION_APPLY;
+                runtime.current_phase = phase::CALIBRATION_APPLY;
             }
             break;
 
-        case control::action::phase::CALIBRATION_APPLY:
+        case phase::CALIBRATION_APPLY:
             if(!calibration){break;}
             runtime.timer += tick_ms;
             if(runtime.timer >= MIDDLE_CALIBRATION_RIGHT_OFF_DELAY_MS)
             {
-                control::action::internal::set_torque(128);
+                action_internal::set_torque(128);
                 runtime.timer = 0;
-                runtime.current_phase = control::action::phase::CALIBRATION_DONE;
+                runtime.current_phase = phase::CALIBRATION_DONE;
             }
             break;
 
-        case control::action::phase::CALIBRATION_DONE:
+        case phase::CALIBRATION_DONE:
             if(calibration){state.middle_calibration_success = true;}
             break;
 
-        case control::action::phase::EXIT_PREPARE:
+        case phase::EXIT_PREPARE:
             runtime.timer += tick_ms;
             if(runtime.timer >= 350)
             {
                 runtime.timer = 0;
                 runtime.elapsed = 0;
                 runtime.ready_timer = 0;
-                runtime.current_phase = control::action::phase::EXIT_RECOVER;
+                runtime.current_phase = phase::EXIT_RECOVER;
             }
             break;
 
-        case control::action::phase::EXIT_RECOVER:
-            result.balance = control::action::internal::recover_command(runtime, ctx);
-            if(control::action::internal::recover_ready(
+        case phase::EXIT_RECOVER:
+            result.balance = action_internal::recover_command(runtime, ctx);
+            if(action_internal::recover_ready(
                    runtime, ctx.status, tick_ms, 0.16f, 1.2f, 140, 2500))
             {
-                result.next = control::action::internal::transition::DONE;
+                result.next = transition::DONE;
             }
             break;
 
@@ -228,16 +239,16 @@ static control::action::internal::step_result step_sit_flow(
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result control::action::internal::step_sit(
-    control::action::state &state, control::action::context &ctx,
+step_result control::action::internal::step_sit(
+    action::state &state, context &ctx,
     uint32_t tick_ms)
 {
-    control::action::internal::step_result result =
+    step_result result =
         step_sit_flow(state, ctx, tick_ms, false);
-    if(ctx.input.action == control::action_request::MIDDLE_CALIBRATION &&
+    if(ctx.input.action == action_request::MIDDLE_CALIBRATION &&
        sit_phase_can_enter_middle_calibration(state.sit.current_phase))
     {
-        result.next = control::action::internal::transition::MIDDLE_CALIBRATION;
+        result.next = transition::MIDDLE_CALIBRATION;
     }
     return result;
 }
@@ -251,9 +262,9 @@ control::action::internal::step_result control::action::internal::step_sit(
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result
+step_result
 control::action::internal::step_middle_calibration(
-    control::action::state &state, control::action::context &ctx,
+    action::state &state, context &ctx,
     uint32_t tick_ms)
 {
     return step_sit_flow(state, ctx, tick_ms, true);

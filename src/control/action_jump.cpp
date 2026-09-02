@@ -3,6 +3,18 @@
 #include "hw/servo.h"
 #include <math.h>
 
+namespace action = control::action;
+namespace action_internal = control::action::internal;
+
+using action::action_runtime;
+using action::context;
+using action::jump_direction;
+using action::jump_runtime;
+using action::phase;
+using action_internal::step_result;
+using action_internal::transition;
+using control::balance_mode;
+
 /* ---- JUMP ---- */
 
 /**
@@ -12,13 +24,13 @@
  * @param direction 跳跃方向
  */
 void control::action::internal::set_jump_direction(
-    control::action::jump_runtime &data, control::action::jump_direction direction)
+    jump_runtime &data, jump_direction direction)
 {
-    data = control::action::jump_runtime{};
-    if(direction == control::action::jump_direction::FORWARD){data.linear_dir = 1;}
-    if(direction == control::action::jump_direction::BACKWARD){data.linear_dir = -1;}
-    if(direction == control::action::jump_direction::TURN_LEFT){data.turn_dir = 1;}
-    if(direction == control::action::jump_direction::TURN_RIGHT){data.turn_dir = -1;}
+    data = jump_runtime{};
+    if(direction == jump_direction::FORWARD){data.linear_dir = 1;}
+    if(direction == jump_direction::BACKWARD){data.linear_dir = -1;}
+    if(direction == jump_direction::TURN_LEFT){data.turn_dir = 1;}
+    if(direction == jump_direction::TURN_RIGHT){data.turn_dir = -1;}
 }
 
 /**
@@ -30,14 +42,14 @@ void control::action::internal::set_jump_direction(
  * @return 跳跃平衡命令
  */
 static control::balance_command update_jump_command(
-    control::action::state &state, control::action::context &ctx)
+    action::state &state, context &ctx)
 {
-    control::action::jump_runtime &jump = state.jump_data;
-    control::action::action_runtime &runtime = state.jump;
+    jump_runtime &jump = state.jump_data;
+    action_runtime &runtime = state.jump;
     control::balance_command command;
     bool linear_jump = jump.linear_dir != 0;
     bool yaw_jump = jump.turn_dir != 0 || linear_jump;
-    command.mode = control::balance_mode::BALANCE;
+    command.mode = balance_mode::BALANCE;
     command.steering = yaw_jump;
     command.yaw_integral = yaw_jump;
 
@@ -54,7 +66,7 @@ static control::balance_command update_jump_command(
         push_ramp_ms = 240;
     }
 
-    if(runtime.current_phase == control::action::phase::PUSH)
+    if(runtime.current_phase == phase::PUSH)
     {
         float ramp = constrain((float)runtime.timer / (float)push_ramp_ms, 0.0f, 1.0f);
         jump.linear_cmd = (float)jump.linear_dir * push_velocity * ramp;
@@ -67,31 +79,31 @@ static control::balance_command update_jump_command(
 
     if(yaw_jump)
     {
-        float error = control::action::internal::angle_error(
+        float error = action_internal::angle_error(
             jump.target_yaw, ctx.status.yaw_angle);
         float feedforward = 0.0f;
         float proportional = jump.turn_dir == 0 ? 3.0f : 1.0f;
         float max_rate = jump.turn_dir == 0 ? 1.8f : 0.6f;
         if(jump.turn_dir != 0)
         {
-            if(runtime.current_phase == control::action::phase::PUSH)
+            if(runtime.current_phase == phase::PUSH)
             {
                 feedforward = 1.2f;
                 proportional = 1.4f;
                 max_rate = 1.8f;
             }
-            if(runtime.current_phase == control::action::phase::FLY)
+            if(runtime.current_phase == phase::FLY)
             {
                 feedforward = 6.4f;
                 proportional = 2.0f;
                 max_rate = 6.4f;
             }
-            if(runtime.current_phase == control::action::phase::LAND)
+            if(runtime.current_phase == phase::LAND)
             {
                 proportional = 0.35f;
                 max_rate = 0.4f;
             }
-            if(runtime.current_phase == control::action::phase::RECOVER)
+            if(runtime.current_phase == phase::RECOVER)
             {
                 proportional = 0.8f;
                 max_rate = 0.5f;
@@ -103,7 +115,7 @@ static control::balance_command update_jump_command(
         command.yaw_rate = jump.yaw_cmd;
     }
 
-    if(jump.linear_dir == 0 || runtime.current_phase != control::action::phase::PUSH)
+    if(jump.linear_dir == 0 || runtime.current_phase != phase::PUSH)
     {
         command.linear_feedback = false;
     }
@@ -120,62 +132,62 @@ static control::balance_command update_jump_command(
  *
  * @return 本周期动作结果
  */
-control::action::internal::step_result control::action::internal::step_jump(
-    control::action::state &state, control::action::context &ctx, uint32_t tick_ms)
+step_result control::action::internal::step_jump(
+    action::state &state, context &ctx, uint32_t tick_ms)
 {
-    control::action::internal::step_result result;
+    step_result result;
     result.balance = update_jump_command(state, ctx);
-    control::action::action_runtime &runtime = state.jump;
-    control::action::jump_runtime &jump = state.jump_data;
+    action_runtime &runtime = state.jump;
+    jump_runtime &jump = state.jump_data;
     switch(runtime.current_phase)
     {
-        case control::action::phase::PREPARE:
-            jump.target_yaw = control::action::internal::wrap_pi(
+        case phase::PREPARE:
+            jump.target_yaw = action_internal::wrap_pi(
                 ctx.status.yaw_angle + (float)jump.turn_dir * PI * 0.5f);
-            control::action::internal::set_pose(
+            action_internal::set_pose(
                 hw::servo::LEG_LEFT_MIN + 60, hw::servo::LEG_RIGHT_MIN - 60, 450, 250);
             result.balance.reset_yaw_integral = true;
-            runtime.current_phase = control::action::phase::PUSH;
+            runtime.current_phase = phase::PUSH;
             runtime.timer = 0;
             break;
 
-        case control::action::phase::PUSH:
+        case phase::PUSH:
         {
             uint32_t wait_ms = jump.linear_dir > 0 ? 650 :
                 (jump.linear_dir < 0 ? 700 : 200);
             runtime.timer += tick_ms;
             if(runtime.timer >= wait_ms)
             {
-                control::action::internal::set_pose(
+                action_internal::set_pose(
                     hw::servo::LEG_LEFT_MAX + 20, hw::servo::LEG_RIGHT_MAX - 20, 0, 0);
                 runtime.timer = 0;
-                runtime.current_phase = control::action::phase::FLY;
+                runtime.current_phase = phase::FLY;
             }
             break;
         }
 
-        case control::action::phase::FLY:
+        case phase::FLY:
             runtime.timer += tick_ms;
             if(runtime.timer >= 130)
             {
-                control::action::internal::set_pose(
+                action_internal::set_pose(
                     hw::servo::LEG_LEFT_MIN + 60, hw::servo::LEG_RIGHT_MIN - 60, 0, 0);
                 runtime.timer = 0;
-                runtime.current_phase = control::action::phase::LAND;
+                runtime.current_phase = phase::LAND;
             }
             break;
 
-        case control::action::phase::LAND:
+        case phase::LAND:
             runtime.timer += tick_ms;
             if(runtime.timer >= 260)
             {
                 runtime.timer = 0;
                 runtime.elapsed = 0;
-                runtime.current_phase = control::action::phase::RECOVER;
+                runtime.current_phase = phase::RECOVER;
             }
             break;
 
-        case control::action::phase::RECOVER:
+        case phase::RECOVER:
             runtime.elapsed += tick_ms;
             if(fabsf(ctx.status.pitch_angle) < 0.18f &&
                fabsf(ctx.status.pitch_rate) < 1.6f)
@@ -189,7 +201,7 @@ control::action::internal::step_result control::action::internal::step_jump(
             if(runtime.timer >= 80 || runtime.elapsed >= 350)
             {
                 result.balance.reset_yaw_integral = true;
-                result.next = control::action::internal::transition::DONE;
+                result.next = transition::DONE;
             }
             break;
 
