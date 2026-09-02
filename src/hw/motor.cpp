@@ -1,6 +1,7 @@
 #include "motor.h"
 
 #include "bus/i2c_bus.h"
+#include "esp_timer.h"
 #include "util/latest.h"
 
 static BLDCDriver3PWM left_driver(32, 33, 25, 22);
@@ -99,4 +100,12 @@ void hw::motor::init()
     left.initFOC();
     right.init();
     right.initFOC();
+
+    left.disable();
+    right.disable();
+
+    control::motor_command initial_command{};
+    initial_command.timestamp_us = (uint32_t)esp_timer_get_time();
+    initial_command.enabled = false;
+    command_latest.set(initial_command);
 }

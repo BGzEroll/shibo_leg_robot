@@ -45,11 +45,11 @@ void app::start()
     hw::servo::init();
     hw::imu::init();
     hw::motor::init();
+    control::init();
     hw::wifi::init();
     hw::gamepad::init();
     io::host::init();
     io::web::init();
-    control::init();
 
     create_tasks();
 }

@@ -18,12 +18,14 @@
 /* ---- control 运行状态 ---- */
 
 static constexpr uint32_t CONTROL_PERIOD_MS = 2;
-static constexpr uint32_t IMU_PERIOD_MS = 5;
 static constexpr uint32_t SERVO_PERIOD_MS = 20;
 static constexpr uint32_t BATTERY_PERIOD_MS = 100;
 static constexpr uint32_t SERVICE_PERIOD_MS = 5;
 static constexpr uint32_t INDICATOR_PERIOD_MS = 50;
 static constexpr uint32_t NETWORK_PERIOD_MS = 50;
+static constexpr uint32_t ENCODER_PERIOD_US = 1000;
+static constexpr uint32_t IMU_PERIOD_US = 5000;
+static constexpr uint32_t MOTOR_COMMAND_TIMEOUT_US = 20000;
 static constexpr float WHEEL_RADIUS = 0.0526f / 2.0f;
 
 static control::action::state action_state;
@@ -179,6 +181,7 @@ void control::foc_task_entry(void *arg)
     bool command_valid = false;
     bool motors_enabled = false;
     uint32_t last_encoder_us = (uint32_t)esp_timer_get_time();
+    uint32_t last_imu_us = last_encoder_us;
 
     while(true)
     {
@@ -189,7 +192,12 @@ void control::foc_task_entry(void *arg)
             command_valid = true;
         }
 
-        if(command_valid && command.enabled)
+        uint32_t now_us = (uint32_t)esp_timer_get_time();
+        bool command_fresh = command_valid &&
+            (uint32_t)(now_us - command.timestamp_us) <= MOTOR_COMMAND_TIMEOUT_US;
+        bool should_enable = command_valid && command.enabled && command_fresh;
+
+        if(should_enable)
         {
             if(!motors_enabled)
             {
@@ -207,14 +215,14 @@ void control::foc_task_entry(void *arg)
 
         hw::motor::left.loopFOC();
         hw::motor::right.loopFOC();
-        if(command_valid && command.enabled)
+        if(should_enable)
         {
             hw::motor::left.move(command.left);
             hw::motor::right.move(command.right);
         }
 
-        uint32_t now_us = (uint32_t)esp_timer_get_time();
-        if((uint32_t)(now_us - last_encoder_us) >= 1000)
+        now_us = (uint32_t)esp_timer_get_time();
+        if((uint32_t)(now_us - last_encoder_us) >= ENCODER_PERIOD_US)
         {
             last_encoder_us = now_us;
             hw::motor::encoder_state encoder;
@@ -224,6 +232,11 @@ void control::foc_task_entry(void *arg)
             encoder.right_shaft_angle = hw::motor::right.shaft_angle;
             encoder.right_shaft_velocity = hw::motor::right.shaft_velocity;
             hw::motor::publish_encoder(encoder);
+        }
+        if((uint32_t)(now_us - last_imu_us) >= IMU_PERIOD_US)
+        {
+            last_imu_us = now_us;
+            hw::imu::sample();
         }
         taskYIELD();
     }
@@ -291,31 +304,24 @@ void control::control_task_entry(void *arg)
 /**
  * @brief 执行非实时硬件和服务维护
  *
- * IMU 采样在这里进行，避免 I2C 操作进入 FOC tight loop；控制任务只读取
- * 最近快照。电池、指示灯、舵机状态、WiFi 和网页会话按各自周期分频。
+ * 电池、指示灯、WiFi 和网页会话按各自周期分频。IMU 由 FOC task 采样，
+ * 以便与右侧编码器串行使用 I2C1；控制任务只读取最近快照。
  *
  * @param arg RTOS 任务参数
  */
 void control::service_task_entry(void *arg)
 {
     TickType_t last_wake_time = xTaskGetTickCount();
-    uint32_t imu_timer_ms = 0;
     uint32_t battery_timer_ms = BATTERY_PERIOD_MS;
     uint32_t indicator_timer_ms = INDICATOR_PERIOD_MS;
     uint32_t network_timer_ms = NETWORK_PERIOD_MS;
 
     while(true)
     {
-        imu_timer_ms += SERVICE_PERIOD_MS;
         battery_timer_ms += SERVICE_PERIOD_MS;
         indicator_timer_ms += SERVICE_PERIOD_MS;
         network_timer_ms += SERVICE_PERIOD_MS;
 
-        if(imu_timer_ms >= IMU_PERIOD_MS)
-        {
-            imu_timer_ms = 0;
-            hw::imu::sample();
-        }
         if(battery_timer_ms >= BATTERY_PERIOD_MS)
         {
             battery_timer_ms = 0;

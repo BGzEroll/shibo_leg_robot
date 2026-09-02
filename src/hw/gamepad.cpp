@@ -4,6 +4,7 @@
 #include "NimBLEUtils.h"
 #include "Preferences.h"
 #include "esp_timer.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "string.h"
 #include "util/latest.h"
@@ -22,11 +23,12 @@ static constexpr const char *XBOX_MANUFACTURER_SEARCHING = "0600030080";
 
 static xbox *gamepad_driver = nullptr;
 static util::latest<control::remote_input> input_latest;
+static util::latest<bool> connection_latest;
 static control::remote_input input_state;
 static uint32_t gamepad_stream_id = 0;
-static volatile bool ble_scan_active = false;
 static bool input_connected = false;
 static String current_target_address;
+static SemaphoreHandle_t gamepad_mutex = nullptr;
 
 class ble_scan_callbacks : public NimBLEScanCallbacks
 {
@@ -42,6 +44,7 @@ static ble_scan_callbacks scan_callbacks;
 static void clear_input_state()
 {
     input_connected = false;
+    connection_latest.set(false);
     input_state = control::remote_input{};
     input_state.stream_id = ++gamepad_stream_id;
     input_latest.set(input_state);
@@ -56,6 +59,7 @@ static void publish_input_state()
     if(connected != input_connected)
     {
         input_connected = connected;
+        connection_latest.set(input_connected);
         input_state = control::remote_input{};
         input_state.stream_id = ++gamepad_stream_id;
     }
@@ -113,7 +117,6 @@ static void stop_ble_activity()
  */
 static void rebuild_gamepad()
 {
-    ble_scan_active = true;
     delay(SCAN_PAUSE_MS);
     stop_ble_activity();
 
@@ -124,7 +127,26 @@ static void rebuild_gamepad()
     clear_input_state();
     gamepad_driver = new xbox(current_target_address.c_str());
     gamepad_driver->init();
-    ble_scan_active = false;
+}
+
+/**
+ * @brief 获取 gamepad 资源互斥锁
+ *
+ * @param timeout 等待超时时间
+ *
+ * @return 成功获取锁时返回 true
+ */
+static bool lock_gamepad(TickType_t timeout)
+{
+    return gamepad_mutex && xSemaphoreTake(gamepad_mutex, timeout) == pdTRUE;
+}
+
+/**
+ * @brief 释放 gamepad 资源互斥锁
+ */
+static void unlock_gamepad()
+{
+    if(gamepad_mutex){xSemaphoreGive(gamepad_mutex);}
 }
 
 /**
@@ -210,7 +232,9 @@ bool hw::gamepad::latest_input(control::remote_input &out)
  */
 bool hw::gamepad::connected()
 {
-    return gamepad_driver && gamepad_driver->get_connection_state();
+    bool connected = false;
+    connection_latest.get(connected);
+    return connected;
 }
 
 /**
@@ -220,7 +244,10 @@ bool hw::gamepad::connected()
  */
 String hw::gamepad::target_address()
 {
-    return current_target_address;
+    if(!lock_gamepad(pdMS_TO_TICKS(50))){return String();}
+    String address = current_target_address;
+    unlock_gamepad();
+    return address;
 }
 
 /**
@@ -239,7 +266,7 @@ bool hw::gamepad::scan_ble(hw::gamepad::ble_device *devices, uint8_t max_count,
     count = 0;
     if(!devices || !max_count){return false;}
 
-    ble_scan_active = true;
+    if(!lock_gamepad(portMAX_DELAY)){return false;}
     delay(SCAN_PAUSE_MS);
     NimBLEScan *scan = NimBLEDevice::getScan();
     if(scan->isScanning()){scan->stop();}
@@ -267,7 +294,7 @@ bool hw::gamepad::scan_ble(hw::gamepad::ble_device *devices, uint8_t max_count,
     }
 
     scan->clearResults();
-    ble_scan_active = false;
+    unlock_gamepad();
     return true;
 }
 
@@ -282,9 +309,11 @@ bool hw::gamepad::set_target_address(const String &address)
 {
     String normalized = normalize_address(address);
     if(normalized.length() != 17){return false;}
+    if(!lock_gamepad(portMAX_DELAY)){return false;}
     current_target_address = normalized;
     save_target_address(current_target_address);
     rebuild_gamepad();
+    unlock_gamepad();
     return true;
 }
 
@@ -293,8 +322,12 @@ bool hw::gamepad::set_target_address(const String &address)
  */
 void hw::gamepad::init()
 {
-    current_target_address = load_target_address();
     input_latest.init();
+    connection_latest.init();
+    gamepad_mutex = xSemaphoreCreateMutex();
+    if(!gamepad_mutex){return;}
+    current_target_address = load_target_address();
+    connection_latest.set(false);
     rebuild_gamepad();
 }
 
@@ -307,14 +340,22 @@ void hw::gamepad::task_entry(void *arg)
 {
     while(true)
     {
-        if(ble_scan_active || !gamepad_driver)
+        if(!lock_gamepad(pdMS_TO_TICKS(50)))
         {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        if(!gamepad_driver)
+        {
+            unlock_gamepad();
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
         gamepad_driver->update();
         publish_input_state();
+        unlock_gamepad();
         delay(20);
     }
 }

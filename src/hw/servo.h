@@ -35,7 +35,6 @@ namespace hw
         void set_torque(uint8_t id, uint8_t type);
         void set(uint8_t id, int16_t position, int16_t speed, uint8_t acceleration);
         void move();
-        void calibrate_middle();
         void init();
     }
 }

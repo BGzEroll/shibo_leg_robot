@@ -267,19 +267,6 @@ void hw::servo::move()
 }
 
 /**
- * @brief 执行左右腿舵机中位校准流程
- */
-void hw::servo::calibrate_middle()
-{
-    set_torque(LEG_LEFT, 0);
-    delay(100);
-    set_torque(LEG_RIGHT, 0);
-    delay(1000);
-    set_torque(LEG_LEFT, 128);
-    set_torque(LEG_RIGHT, 128);
-}
-
-/**
  * @brief 初始化 STS3032 舵机总线
  */
 void hw::servo::init()

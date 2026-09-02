@@ -46,7 +46,11 @@ namespace control
             PUSH,
             FLY,
             LAND,
-            RECOVER
+            RECOVER,
+            CALIBRATION_WAIT,
+            CALIBRATION_RIGHT_OFF,
+            CALIBRATION_APPLY,
+            CALIBRATION_DONE
         };
 
         struct action_runtime

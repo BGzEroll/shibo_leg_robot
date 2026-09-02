@@ -4,6 +4,7 @@
 #include "WiFi.h"
 #include "esp_bt.h"
 #include "esp_wifi.h"
+#include "freertos/semphr.h"
 
 /* ---- WiFi 配置与运行状态 ---- */
 
@@ -25,6 +26,7 @@ static bool low_latency_requested = false;
 static uint32_t sta_only_at_ms = 0;
 static uint32_t sleep_restore_at_ms = 0;
 static uint32_t low_latency_request_sequence = 0;
+static SemaphoreHandle_t wifi_mutex = nullptr;
 
 /* ---- WiFi 内部流程 ---- */
 
@@ -184,7 +186,9 @@ static void start_config_portal()
     WiFi.mode(WIFI_AP_STA);
     apply_radio_settings();
     WiFi.softAP(AP_SSID, AP_PASS);
+    portENTER_CRITICAL(&low_latency_lock);
     portal_active = true;
+    portEXIT_CRITICAL(&low_latency_lock);
 }
 
 /**
@@ -195,8 +199,30 @@ static void switch_to_station_only()
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
     apply_radio_settings();
+    portENTER_CRITICAL(&low_latency_lock);
     portal_active = false;
     pending_sta_only = false;
+    portEXIT_CRITICAL(&low_latency_lock);
+}
+
+/**
+ * @brief 获取 WiFi 硬件操作互斥锁
+ *
+ * @param timeout 等待超时时间
+ *
+ * @return 成功获取锁时返回 true
+ */
+static bool lock_wifi(TickType_t timeout)
+{
+    return wifi_mutex && xSemaphoreTake(wifi_mutex, timeout) == pdTRUE;
+}
+
+/**
+ * @brief 释放 WiFi 硬件操作互斥锁
+ */
+static void unlock_wifi()
+{
+    if(wifi_mutex){xSemaphoreGive(wifi_mutex);}
 }
 
 /* ---- wifi 公共 API ---- */
@@ -208,7 +234,10 @@ static void switch_to_station_only()
  */
 bool hw::wifi::station_connected()
 {
-    return WiFi.status() == WL_CONNECTED;
+    if(!lock_wifi(pdMS_TO_TICKS(50))){return false;}
+    bool connected = WiFi.status() == WL_CONNECTED;
+    unlock_wifi();
+    return connected;
 }
 
 /**
@@ -218,7 +247,11 @@ bool hw::wifi::station_connected()
  */
 bool hw::wifi::config_portal_active()
 {
-    return portal_active;
+    bool active;
+    portENTER_CRITICAL(&low_latency_lock);
+    active = portal_active;
+    portEXIT_CRITICAL(&low_latency_lock);
+    return active;
 }
 
 /**
@@ -233,12 +266,20 @@ bool hw::wifi::config_portal_active()
 bool hw::wifi::connect_and_save(const String &ssid, const String &password, IPAddress &ip)
 {
     if(!ssid.length()){return false;}
-    if(!connect_station(ssid, password, WIFI_AP_STA, PORTAL_CONNECT_TIMEOUT_MS)){return false;}
+    if(!lock_wifi(portMAX_DELAY)){return false;}
+    if(!connect_station(ssid, password, WIFI_AP_STA, PORTAL_CONNECT_TIMEOUT_MS))
+    {
+        unlock_wifi();
+        return false;
+    }
 
     save_credentials(ssid, password);
     ip = WiFi.localIP();
+    portENTER_CRITICAL(&low_latency_lock);
     pending_sta_only = true;
     sta_only_at_ms = millis() + STA_ONLY_DELAY_MS;
+    portEXIT_CRITICAL(&low_latency_lock);
+    unlock_wifi();
     return true;
 }
 
@@ -249,7 +290,10 @@ bool hw::wifi::connect_and_save(const String &ssid, const String &password, IPAd
  */
 IPAddress hw::wifi::station_ip()
 {
-    return WiFi.localIP();
+    if(!lock_wifi(pdMS_TO_TICKS(50))){return IPAddress();}
+    IPAddress ip = WiFi.localIP();
+    unlock_wifi();
+    return ip;
 }
 
 /**
@@ -275,11 +319,20 @@ void hw::wifi::set_low_latency_mode(bool enabled)
  */
 void hw::wifi::update()
 {
-    if(pending_sta_only && (int32_t)(millis() - sta_only_at_ms) >= 0)
+    if(!lock_wifi(0)){return;}
+
+    bool pending;
+    uint32_t switch_at_ms;
+    portENTER_CRITICAL(&low_latency_lock);
+    pending = pending_sta_only;
+    switch_at_ms = sta_only_at_ms;
+    portEXIT_CRITICAL(&low_latency_lock);
+    if(pending && (int32_t)(millis() - switch_at_ms) >= 0)
     {
         switch_to_station_only();
     }
     apply_low_latency_request();
+    unlock_wifi();
 }
 
 /**
@@ -287,7 +340,13 @@ void hw::wifi::update()
  */
 void hw::wifi::init()
 {
+    wifi_mutex = xSemaphoreCreateMutex();
+    if(!wifi_mutex){return;}
+
     portENTER_CRITICAL(&low_latency_lock);
+    portal_active = false;
+    pending_sta_only = false;
+    sta_only_at_ms = 0;
     low_latency_requested = false;
     sleep_restore_at_ms = 0;
     low_latency_request_sequence = 0;
@@ -302,7 +361,9 @@ void hw::wifi::init()
     if(load_credentials(ssid, password) &&
        connect_station(ssid, password, WIFI_STA, START_CONNECT_TIMEOUT_MS))
     {
+        portENTER_CRITICAL(&low_latency_lock);
         portal_active = false;
+        portEXIT_CRITICAL(&low_latency_lock);
         return;
     }
 
