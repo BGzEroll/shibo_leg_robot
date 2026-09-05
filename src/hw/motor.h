@@ -22,6 +22,8 @@ namespace hw
         bool latest_command(control::motor_command &out);
         bool publish_encoder(const encoder_state &value);
         bool publish_command(const control::motor_command &value);
+        bool sample_encoders();
+        bool apply_latest_encoder_sample(uint32_t &timestamp_us);
 
         extern BLDCMotor left;
         extern BLDCMotor right;

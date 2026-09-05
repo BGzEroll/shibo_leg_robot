@@ -7,6 +7,7 @@
 #include "hw/imu.h"
 #include "hw/indicator.h"
 #include "hw/motor.h"
+#include "hw/sensor.h"
 #include "hw/servo.h"
 #include "hw/wifi.h"
 #include "io/host.h"
@@ -19,6 +20,8 @@
  */
 static void create_tasks()
 {
+    xTaskCreatePinnedToCore(
+        hw::sensor::task_entry, "sensor_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         control::foc_task_entry, "foc_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(

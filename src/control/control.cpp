@@ -23,8 +23,8 @@ static constexpr uint32_t BATTERY_PERIOD_MS = 100;
 static constexpr uint32_t SERVICE_PERIOD_MS = 5;
 static constexpr uint32_t INDICATOR_PERIOD_MS = 50;
 static constexpr uint32_t NETWORK_PERIOD_MS = 50;
-static constexpr uint32_t ENCODER_PERIOD_US = 1000;
-static constexpr uint32_t IMU_PERIOD_US = 5000;
+static constexpr uint32_t ENCODER_TIMEOUT_US = 5000;
+static constexpr uint32_t IMU_TIMEOUT_US = 15000;
 static constexpr uint32_t MOTOR_COMMAND_TIMEOUT_US = 20000;
 static constexpr float WHEEL_RADIUS = 0.0526f / 2.0f;
 
@@ -119,7 +119,8 @@ static control::sensor_snapshot read_sensor(uint32_t tick_ms)
     sensor.avg_leg_height = (sensor.leg_height[0] + sensor.leg_height[1]) * 0.5f;
 
     hw::imu::state imu_state;
-    if(hw::imu::latest(imu_state))
+    if(hw::imu::latest(imu_state) &&
+       (uint32_t)(sensor.timestamp_us - imu_state.timestamp_us) <= IMU_TIMEOUT_US)
     {
         sensor.imu_valid = true;
         sensor.pitch_angle = imu_state.angle[1];
@@ -130,7 +131,8 @@ static control::sensor_snapshot read_sensor(uint32_t tick_ms)
     }
 
     hw::motor::encoder_state encoder;
-    if(hw::motor::latest_encoder(encoder))
+    if(hw::motor::latest_encoder(encoder) &&
+       (uint32_t)(sensor.timestamp_us - encoder.timestamp_us) <= ENCODER_TIMEOUT_US)
     {
         sensor.encoder_valid = true;
         sensor.avg_linear_pos =
@@ -180,8 +182,7 @@ void control::foc_task_entry(void *arg)
     control::motor_command command;
     bool command_valid = false;
     bool motors_enabled = false;
-    uint32_t last_encoder_us = (uint32_t)esp_timer_get_time();
-    uint32_t last_imu_us = last_encoder_us;
+    uint32_t last_encoder_sample_us = 0;
 
     while(true)
     {
@@ -192,10 +193,18 @@ void control::foc_task_entry(void *arg)
             command_valid = true;
         }
 
+        uint32_t encoder_sample_us = 0;
+        bool encoder_updated =
+            hw::motor::apply_latest_encoder_sample(encoder_sample_us);
+        if(encoder_updated){last_encoder_sample_us = encoder_sample_us;}
+
         uint32_t now_us = (uint32_t)esp_timer_get_time();
+        bool encoder_fresh = last_encoder_sample_us != 0 &&
+            (uint32_t)(now_us - last_encoder_sample_us) <= ENCODER_TIMEOUT_US;
         bool command_fresh = command_valid &&
             (uint32_t)(now_us - command.timestamp_us) <= MOTOR_COMMAND_TIMEOUT_US;
-        bool should_enable = command_valid && command.enabled && command_fresh;
+        bool should_enable = command_valid && command.enabled && command_fresh &&
+            encoder_fresh;
 
         if(should_enable)
         {
@@ -213,30 +222,28 @@ void control::foc_task_entry(void *arg)
             motors_enabled = false;
         }
 
-        hw::motor::left.loopFOC();
-        hw::motor::right.loopFOC();
-        if(should_enable)
+        if(encoder_updated)
         {
-            hw::motor::left.move(command.left);
-            hw::motor::right.move(command.right);
-        }
+            hw::motor::left.loopFOC();
+            hw::motor::right.loopFOC();
+            if(should_enable)
+            {
+                hw::motor::left.move(command.left);
+                hw::motor::right.move(command.right);
+            }
+            else
+            {
+                hw::motor::left.move();
+                hw::motor::right.move();
+            }
 
-        now_us = (uint32_t)esp_timer_get_time();
-        if((uint32_t)(now_us - last_encoder_us) >= ENCODER_PERIOD_US)
-        {
-            last_encoder_us = now_us;
             hw::motor::encoder_state encoder;
-            encoder.timestamp_us = now_us;
+            encoder.timestamp_us = encoder_sample_us;
             encoder.left_shaft_angle = hw::motor::left.shaft_angle;
             encoder.left_shaft_velocity = hw::motor::left.shaft_velocity;
             encoder.right_shaft_angle = hw::motor::right.shaft_angle;
             encoder.right_shaft_velocity = hw::motor::right.shaft_velocity;
             hw::motor::publish_encoder(encoder);
-        }
-        if((uint32_t)(now_us - last_imu_us) >= IMU_PERIOD_US)
-        {
-            last_imu_us = now_us;
-            hw::imu::sample();
         }
         taskYIELD();
     }
@@ -304,8 +311,8 @@ void control::control_task_entry(void *arg)
 /**
  * @brief 执行非实时硬件和服务维护
  *
- * 电池、指示灯、WiFi 和网页会话按各自周期分频。IMU 由 FOC task 采样，
- * 以便与右侧编码器串行使用 I2C1；控制任务只读取最近快照。
+ * 电池、指示灯、WiFi 和网页会话按各自周期分频。传感器由独立任务采样，
+ * 控制任务只读取最近快照。
  *
  * @param arg RTOS 任务参数
  */
