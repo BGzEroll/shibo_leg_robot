@@ -195,8 +195,6 @@ void hw::motor::init()
     left.linkDriver(&left_driver);
     right.linkDriver(&right_driver);
 
-    left.foc_modulation = FOCModulationType::SpaceVectorPWM;
-    right.foc_modulation = FOCModulationType::SpaceVectorPWM;
     left_driver.voltage_power_supply = 8.0f;
     right_driver.voltage_power_supply = 8.0f;
     left_driver.init();
@@ -204,10 +202,6 @@ void hw::motor::init()
 
     left.voltage_sensor_align = 6.0f;
     right.voltage_sensor_align = 6.0f;
-    left.controller = MotionControlType::torque;
-    right.controller = MotionControlType::torque;
-    left.torque_controller = TorqueControlType::voltage;
-    right.torque_controller = TorqueControlType::voltage;
 
     rotor_latest.init();
     encoder_latest.init();

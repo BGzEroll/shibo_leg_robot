@@ -26,8 +26,8 @@ static void create_tasks()
         control::foc_task_entry, "foc_task", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         control::control_task_entry, "control_task", 4096, nullptr, 5, nullptr, 0);
-    xTaskCreatePinnedToCore(
-        io::host::task_entry, "host_task", 4096, nullptr, 3, nullptr, 0);
+    // xTaskCreatePinnedToCore(
+    //     io::host::task_entry, "host_task", 4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(
         hw::gamepad::task_entry, "gamepad_task", 4096, nullptr, 3, nullptr, 0);
     xTaskCreatePinnedToCore(

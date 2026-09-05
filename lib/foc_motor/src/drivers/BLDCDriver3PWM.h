@@ -1,64 +1,27 @@
-#ifndef BLDCDriver3PWM_h
-#define BLDCDriver3PWM_h
+#ifndef BLDC_DRIVER_3PWM_H
+#define BLDC_DRIVER_3PWM_H
 
 #include "../common/base_classes/BLDCDriver.h"
 #include "../common/foc_utils.h"
-#include "../common/time_utils.h"
-#include "../common/defaults.h"
-#include "hardware_api.h"
 
-/**
- 3 pwm bldc driver class
-*/
-class BLDCDriver3PWM: public BLDCDriver
+/** @brief 三路 PWM 和一路公共使能的无刷电机驱动 */
+class BLDCDriver3PWM : public BLDCDriver
 {
-  public:
-    /**
-      BLDCDriver class constructor
-      @param phA A phase pwm pin
-      @param phB B phase pwm pin
-      @param phC C phase pwm pin
-      @param en1 enable pin (optional input)
-      @param en2 enable pin (optional input)
-      @param en3 enable pin (optional input)
-    */
-    BLDCDriver3PWM(int phA,int phB,int phC, int en1 = NOT_SET, int en2 = NOT_SET, int en3 = NOT_SET);
-    
-    /**  Motor hardware init function */
-  	int init() override;
-    /** Motor disable function */
-  	void disable() override;
-    /** Motor enable function */
-    void enable() override;
+    public:
+        BLDCDriver3PWM(int phase_a, int phase_b, int phase_c, int enable_pin = NOT_SET);
 
-    // hardware variables
-  	int pwmA; //!< phase A pwm pin number
-  	int pwmB; //!< phase B pwm pin number
-  	int pwmC; //!< phase C pwm pin number
-    int enableA_pin; //!< enable pin number
-    int enableB_pin; //!< enable pin number
-    int enableC_pin; //!< enable pin number
-    bool enable_active_high = true;
+    public:
+        void enable() override;
+        void disable() override;
+        void setPwm(float ua, float ub, float uc) override;
+        int init() override;
 
-    /** 
-     * Set phase voltages to the harware 
-     * 
-     * @param Ua - phase A voltage
-     * @param Ub - phase B voltage
-     * @param Uc - phase C voltage
-    */
-    void setPwm(float Ua, float Ub, float Uc) override;
-
-    /** 
-     * Set phase voltages to the harware 
-     * 
-     * @param sc - phase A state : active / disabled ( high impedance )
-     * @param sb - phase B state : active / disabled ( high impedance )
-     * @param sa - phase C state : active / disabled ( high impedance )
-    */
-    virtual void setPhaseState(int sa, int sb, int sc) override;
-  private:
+    public:
+        int32_t pwmA;
+        int32_t pwmB;
+        int32_t pwmC;
+        int32_t enableA_pin;
+        bool enable_active_high = true;
 };
-
 
 #endif

@@ -1,40 +1,30 @@
 #ifndef PID_H
 #define PID_H
 
+#include <stdint.h>
 
-#include "time_utils.h"
-#include "foc_utils.h"
-
-/**
- *  PID controller class
- */
+/** @brief 带积分限幅和输出斜率限制的 PID 控制器 */
 class PIDController
 {
-public:
-    /**
-     *  
-     * @param P - Proportional gain 
-     * @param I - Integral gain
-     * @param D - Derivative gain 
-     * @param ramp - Maximum speed of change of the output value
-     * @param limit - Maximum output value
-     */
-    PIDController(float P, float I, float D, float ramp, float limit);
-    ~PIDController() = default;
+    public:
+        PIDController(float p, float i, float d, float ramp, float limit);
+        ~PIDController() = default;
 
-    float operator() (float error);
+    public:
+        float operator()(float error);
 
-    float P; //!< Proportional gain 
-    float I; //!< Integral gain 
-    float D; //!< Derivative gain 
-    float output_ramp; //!< Maximum speed of change of the output value
-    float limit; //!< Maximum output value
+    public:
+        float P;
+        float I;
+        float D;
+        float output_ramp;
+        float limit;
 
-protected:
-    float error_prev; //!< last tracking error value
-    float output_prev;  //!< last pid output value
-    float integral_prev; //!< last integral component value
-    unsigned long timestamp_prev; //!< Last execution timestamp
+    protected:
+        float error_prev;
+        float output_prev;
+        float integral_prev;
+        uint32_t timestamp_prev;
 };
 
-#endif // PID_H
+#endif

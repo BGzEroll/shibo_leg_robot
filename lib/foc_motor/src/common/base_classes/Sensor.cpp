@@ -1,72 +1,68 @@
 #include "Sensor.h"
+
 #include "../foc_utils.h"
 #include "../time_utils.h"
 
-
-
-void Sensor::update() {
-    float val = getSensorAngle();
-    angle_prev_ts = _micros();
-    float d_angle = val - angle_prev;
-    // if overflow happened track it as full rotation
-    if(abs(d_angle) > (0.8f*_2PI) ) full_rotations += ( d_angle > 0 ) ? -1 : 1; 
-    angle_prev = val;
+/**
+ * @brief 获取最近采样的单圈机械角
+ *
+ * @return 单圈角度，单位 rad
+ */
+float Sensor::getMechanicalAngle()
+{
+    return angle_prev;
 }
 
+/**
+ * @brief 获取包含整圈累计的机械角
+ *
+ * @return 多圈角度，单位 rad；长时间累计受 float 精度限制
+ */
+float Sensor::getAngle()
+{
+    return (float)full_rotations * _2PI + angle_prev;
+}
 
- /** get current angular velocity (rad/s) */
-float Sensor::getVelocity() {
-    // calculate sample time
-    float Ts = (angle_prev_ts - vel_angle_prev_ts)*1e-6;
-    if (Ts < min_elapsed_time) return velocity; // don't update velocity if Ts is too small
-
-    velocity = ( (float)(full_rotations - vel_full_rotations)*_2PI + (angle_prev - vel_angle_prev) ) / Ts;
+/**
+ * @brief 以采样时间差计算轴速度，过短间隔沿用上次结果
+ *
+ * @return 轴速度，单位 rad/s
+ */
+float Sensor::getVelocity()
+{
+    float dt = (angle_prev_ts - vel_angle_prev_ts) * 1e-6;
+    if(dt < min_elapsed_time){return velocity;}
+    velocity = ((float)(full_rotations - vel_full_rotations) * _2PI +
+        (angle_prev - vel_angle_prev)) / dt;
     vel_angle_prev = angle_prev;
     vel_full_rotations = full_rotations;
     vel_angle_prev_ts = angle_prev_ts;
     return velocity;
 }
 
+/** @brief 读取一次单圈角并按原跨圈阈值更新累计圈数 */
+void Sensor::update()
+{
+    float angle = getSensorAngle();
+    angle_prev_ts = _micros();
+    float delta_angle = angle - angle_prev;
+    if(abs(delta_angle) > 0.8f * _2PI)
+    {
+        full_rotations += delta_angle > 0 ? -1 : 1;
+    }
+    angle_prev = angle;
+}
 
-
-void Sensor::init() {
-    // initialize all the internal variables of Sensor to ensure a "smooth" startup (without a 'jump' from zero)
-    getSensorAngle(); // call once
+/** @brief 按原采样次序初始化角度及速度差分基准，避免启动跳变 */
+void Sensor::init()
+{
+    getSensorAngle();
     delayMicroseconds(1);
-    vel_angle_prev = getSensorAngle(); // call again
+    vel_angle_prev = getSensorAngle();
     vel_angle_prev_ts = _micros();
     delay(1);
-    getSensorAngle(); // call once
+    getSensorAngle();
     delayMicroseconds(1);
-    angle_prev = getSensorAngle(); // call again
+    angle_prev = getSensorAngle();
     angle_prev_ts = _micros();
-}
-
-
-float Sensor::getMechanicalAngle() {
-    return angle_prev;
-}
-
-
-
-float Sensor::getAngle(){
-    return (float)full_rotations * _2PI + angle_prev;
-}
-
-
-
-double Sensor::getPreciseAngle() {
-    return (double)full_rotations * (double)_2PI + (double)angle_prev;
-}
-
-
-
-int32_t Sensor::getFullRotations() {
-    return full_rotations;
-}
-
-
-
-int Sensor::needsSearch() {
-    return 0; // default false
 }

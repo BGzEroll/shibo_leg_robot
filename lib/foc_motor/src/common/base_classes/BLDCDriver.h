@@ -1,47 +1,26 @@
-#ifndef BLDCDRIVER_H
-#define BLDCDRIVER_H
+#ifndef BLDC_DRIVER_H
+#define BLDC_DRIVER_H
 
-#include "Arduino.h"
+#include <Arduino.h>
 
-class BLDCDriver{
+/** @brief 三相 PWM 驱动接口 */
+class BLDCDriver
+{
     public:
-
-        /** Initialise hardware */
-        virtual int init() = 0;
-        /** Enable hardware */
         virtual void enable() = 0;
-        /** Disable hardware */
         virtual void disable() = 0;
+        virtual void setPwm(float ua, float ub, float uc) = 0;
+        virtual int init() = 0;
 
-        long pwm_frequency; //!< pwm frequency value in hertz
-        float voltage_power_supply; //!< power supply voltage
-        float voltage_limit; //!< limiting voltage set to the motor
-
-
-        float dc_a; //!< currently set duty cycle on phaseA
-        float dc_b; //!< currently set duty cycle on phaseB
-        float dc_c; //!< currently set duty cycle on phaseC
-
-        bool initialized = false; // true if driver was successfully initialized
-        void* params = 0; // pointer to hardware specific parameters of driver
-
-        /**
-         * Set phase voltages to the harware
-         *
-         * @param Ua - phase A voltage
-         * @param Ub - phase B voltage
-         * @param Uc - phase C voltage
-        */
-        virtual void setPwm(float Ua, float Ub, float Uc) = 0;
-
-        /**
-         * Set phase state, enable/disable
-         *
-         * @param sc - phase A state : active / disabled ( high impedance )
-         * @param sb - phase B state : active / disabled ( high impedance )
-         * @param sa - phase C state : active / disabled ( high impedance )
-        */
-        virtual void setPhaseState(int sa, int sb, int sc) = 0;
+    public:
+        int32_t pwm_frequency = 0;
+        float voltage_power_supply = 0.0f;
+        float voltage_limit = 0.0f;
+        float dc_a = 0.0f;
+        float dc_b = 0.0f;
+        float dc_c = 0.0f;
+        bool initialized = false;
+        void *params = nullptr;
 };
 
 #endif

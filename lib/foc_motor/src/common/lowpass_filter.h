@@ -1,28 +1,24 @@
 #ifndef LOWPASS_FILTER_H
 #define LOWPASS_FILTER_H
 
+#include <stdint.h>
 
-#include "time_utils.h"
-#include "foc_utils.h"
-
-/**
- *  Low pass filter class
- */
+/** @brief 根据实测时间差更新的一阶低通滤波器 */
 class LowPassFilter
 {
-public:
-    /**
-     * @param Tf - Low pass filter time constant
-     */
-    LowPassFilter(float Tf);
-    ~LowPassFilter() = default;
+    public:
+        LowPassFilter(float time_constant);
+        ~LowPassFilter() = default;
 
-    float operator() (float x);
-    float Tf; //!< Low pass filter time constant
+    public:
+        float operator()(float input);
 
-protected:
-    unsigned long timestamp_prev;  //!< Last execution timestamp
-    float y_prev; //!< filtered value in previous execution step 
+    public:
+        float Tf;
+
+    protected:
+        uint32_t timestamp_prev;
+        float y_prev;
 };
 
-#endif // LOWPASS_FILTER_H
+#endif
