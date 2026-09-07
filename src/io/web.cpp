@@ -7,8 +7,6 @@
 #include "hw/gamepad.h"
 #include "hw/wifi.h"
 #include "esp_timer.h"
-#include "freertos/semphr.h"
-#include "freertos/task.h"
 #include "util/latest.h"
 #include <WiFi.h>
 #include <esp_http_server.h>
@@ -17,8 +15,6 @@
 /* ---- HTTP 页面与运行状态 ---- */
 
 static constexpr uint32_t BLE_SCAN_MS = 4000;
-static constexpr uint32_t BLE_SCAN_TASK_STACK_SIZE = 4096;
-static constexpr UBaseType_t BLE_SCAN_TASK_PRIORITY = 2;
 static constexpr uint32_t REMOTE_LEASE_TIMEOUT_MS = 500;
 static constexpr uint32_t REMOTE_ACK_INTERVAL_MS = 200;
 static constexpr uint8_t BLE_SCAN_MAX = 24;
@@ -51,45 +47,6 @@ static uint32_t remote_timestamp_ms = 0;
 static uint32_t remote_ack_timestamp_ms = 0;
 static uint32_t remote_sequence = 0;
 static bool remote_sequence_valid = false;
-static SemaphoreHandle_t ble_scan_mutex = nullptr;
-
-enum class ble_scan_state : uint8_t
-{
-    IDLE = 0,
-    RUNNING,
-    READY,
-    FAILED
-};
-
-static ble_scan_state current_ble_scan_state = ble_scan_state::IDLE;
-static hw::gamepad::ble_device ble_scan_devices[BLE_SCAN_MAX];
-static uint8_t ble_scan_device_count = 0;
-
-/**
- * @brief 将启动阶段转换为网页状态键
- *
- * @param stage 当前启动阶段
- *
- * @return 稳定的 ASCII 状态键
- */
-static const char *startup_stage_key(app::startup_stage stage)
-{
-    switch(stage)
-    {
-        case app::startup_stage::STARTING: return "starting";
-        case app::startup_stage::SERVICES: return "services";
-        case app::startup_stage::TASKS: return "tasks";
-        case app::startup_stage::BATTERY: return "battery";
-        case app::startup_stage::INDICATOR: return "indicator";
-        case app::startup_stage::SERVO: return "servo";
-        case app::startup_stage::IMU: return "imu";
-        case app::startup_stage::MOTOR: return "motor";
-        case app::startup_stage::CONTROL: return "control";
-        case app::startup_stage::READY: return "ready";
-        case app::startup_stage::TASK_CREATION_FAILED: return "task_error";
-        default: return "unknown";
-    }
-}
 
 
 /**
@@ -568,111 +525,27 @@ static esp_err_t handle_xbox_status(httpd_req_t *req)
         "{\"connected\":false,\"target\":";
     if(httpd_resp_sendstr_chunk(req, prefix) != ESP_OK){return ESP_FAIL;}
     if(!send_json_string(req, hw::gamepad::target_address())){return ESP_FAIL;}
-    char suffix[64];
-    snprintf(suffix, sizeof(suffix), ",\"ready\":%s,\"stage\":\"%s\"}",
-        app::ready() ? "true" : "false", startup_stage_key(app::stage()));
-    if(httpd_resp_sendstr_chunk(req, suffix) != ESP_OK){return ESP_FAIL;}
+    if(httpd_resp_send_chunk(req, "}", 1) != ESP_OK){return ESP_FAIL;}
     return httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 /**
- * @brief 在独立任务中执行阻塞式 BLE 扫描
- *
- * 扫描期间 gamepad 模块会独占 NimBLE 扫描器，但 HTTP 服务任务仍可继续
- * 处理状态查询、页面请求和 WebSocket 会话。
- *
- * @param arg RTOS 任务参数
+ * @brief 处理 BLE 扫描请求
  */
-static void ble_scan_task_entry(void *arg)
+static esp_err_t handle_ble_scan(httpd_req_t *req)
 {
-    uint8_t count = 0;
-    bool ok = hw::gamepad::scan_ble(
-        ble_scan_devices, BLE_SCAN_MAX, count, BLE_SCAN_MS);
-
-    if(xSemaphoreTake(ble_scan_mutex, portMAX_DELAY) == pdTRUE)
-    {
-        ble_scan_device_count = ok ? count : 0;
-        current_ble_scan_state = ok ? ble_scan_state::READY : ble_scan_state::FAILED;
-        xSemaphoreGive(ble_scan_mutex);
-    }
-    vTaskDelete(nullptr);
-}
-
-/**
- * @brief 启动一次后台 BLE 扫描
- *
- * @return 扫描任务创建成功时返回 true
- */
-static bool start_ble_scan()
-{
-    if(xSemaphoreTake(ble_scan_mutex, pdMS_TO_TICKS(50)) != pdTRUE){return false;}
-    if(current_ble_scan_state != ble_scan_state::IDLE)
-    {
-        xSemaphoreGive(ble_scan_mutex);
-        return true;
-    }
-
-    ble_scan_device_count = 0;
-    current_ble_scan_state = ble_scan_state::RUNNING;
-    xSemaphoreGive(ble_scan_mutex);
-
-    BaseType_t result = xTaskCreatePinnedToCore(
-        ble_scan_task_entry,
-        "ble_scan_task",
-        BLE_SCAN_TASK_STACK_SIZE,
-        nullptr,
-        BLE_SCAN_TASK_PRIORITY,
-        nullptr,
-        0);
-    if(result == pdPASS){return true;}
-
-    if(xSemaphoreTake(ble_scan_mutex, portMAX_DELAY) == pdTRUE)
-    {
-        current_ble_scan_state = ble_scan_state::FAILED;
-        xSemaphoreGive(ble_scan_mutex);
-    }
-    return false;
-}
-
-/**
- * @brief 发送 BLE 扫描状态或已完成的扫描结果
- *
- * @param req HTTP 请求
- *
- * @return ESP-IDF 处理结果
- */
-static esp_err_t send_ble_scan_result(httpd_req_t *req)
-{
-    if(xSemaphoreTake(ble_scan_mutex, pdMS_TO_TICKS(50)) != pdTRUE)
-    {
-        return send_json(req, "503 Service Unavailable",
-            "{\"ok\":false,\"scanning\":false,\"devices\":[]}");
-    }
-
-    ble_scan_state state = current_ble_scan_state;
-    if(state == ble_scan_state::RUNNING)
-    {
-        xSemaphoreGive(ble_scan_mutex);
-        return send_json(req, "200 OK",
-            "{\"ok\":true,\"scanning\":true,\"devices\":[]}");
-    }
-    if(state == ble_scan_state::FAILED)
-    {
-        current_ble_scan_state = ble_scan_state::IDLE;
-        xSemaphoreGive(ble_scan_mutex);
-        return send_json(req, "500 Internal Server Error",
-            "{\"ok\":false,\"scanning\":false,\"devices\":[]}");
-    }
+    if(!management_available(req)){return ESP_OK;}
 
     hw::gamepad::ble_device devices[BLE_SCAN_MAX];
-    uint8_t count = ble_scan_device_count;
-    for(uint8_t i = 0; i < count; i++){devices[i] = ble_scan_devices[i];}
-    current_ble_scan_state = ble_scan_state::IDLE;
-    xSemaphoreGive(ble_scan_mutex);
+    uint8_t count = 0;
+    if(!hw::gamepad::scan_ble(devices, BLE_SCAN_MAX, count, BLE_SCAN_MS))
+    {
+        return send_json(req, "500 Internal Server Error",
+            "{\"ok\":false,\"devices\":[]}");
+    }
 
     httpd_resp_set_type(req, "application/json");
-    if(httpd_resp_sendstr_chunk(req,
-       "{\"ok\":true,\"scanning\":false,\"devices\":[") != ESP_OK)
+    if(httpd_resp_sendstr_chunk(req, "{\"ok\":true,\"devices\":[") != ESP_OK)
     {
         return ESP_FAIL;
     }
@@ -698,20 +571,6 @@ static esp_err_t send_ble_scan_result(httpd_req_t *req)
     }
     if(httpd_resp_sendstr_chunk(req, "]}") != ESP_OK){return ESP_FAIL;}
     return httpd_resp_send_chunk(req, nullptr, 0);
-}
-
-/**
- * @brief 处理 BLE 扫描请求
- */
-static esp_err_t handle_ble_scan(httpd_req_t *req)
-{
-    if(!management_available(req)){return ESP_OK;}
-    if(!start_ble_scan())
-    {
-        return send_json(req, "503 Service Unavailable",
-            "{\"ok\":false,\"scanning\":false,\"devices\":[]}");
-    }
-    return send_ble_scan_result(req);
 }
 
 /**
@@ -1049,10 +908,6 @@ bool io::web::init()
     if(server){return true;}
 
     if(!remote_latest.init()){return false;}
-    ble_scan_mutex = xSemaphoreCreateMutex();
-    if(!ble_scan_mutex){return false;}
-    current_ble_scan_state = ble_scan_state::IDLE;
-    ble_scan_device_count = 0;
     clear_remote_session(-1);
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();

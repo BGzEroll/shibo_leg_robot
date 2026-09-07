@@ -171,7 +171,6 @@ namespace io
                         <section class="panel">
                             <div class="row"><span>手柄连接</span><strong id="connected">--</strong></div>
                             <div class="row"><span>目标地址</span><strong id="target">--</strong></div>
-                            <div class="row"><span>控制系统</span><strong id="ready">--</strong></div>
                         </section>
                         <button id="scan">扫描蓝牙设备</button>
                         <div id="status"></div>
@@ -186,8 +185,6 @@ namespace io
                                 const data=await (await fetch('/api/xbox/status')).json();
                                 document.getElementById('connected').textContent=data.connected?'已连接':'未连接';
                                 document.getElementById('target').textContent=data.target||'自动发现';
-                                const stages={starting:'启动中',services:'通信服务初始化',tasks:'创建控制任务',battery:'电池初始化',indicator:'指示灯初始化',servo:'舵机初始化',imu:'IMU 校准',motor:'电机 FOC 校准',control:'控制器初始化',ready:'已就绪',task_error:'控制任务创建失败'};
-                                document.getElementById('ready').textContent=stages[data.stage]||(data.ready?'已就绪':'初始化中');
                             }catch(e){}
                         }
                         function item(dev){
@@ -198,12 +195,7 @@ namespace io
                         scanBtn.onclick=async()=>{
                             scanBtn.disabled=true; devicesEl.innerHTML=''; statusEl.textContent='正在扫描 BLE，约 4 秒...';
                             try{
-                                let data;
-                                do{
-                                    data=await (await fetch('/api/ble/scan')).json();
-                                    if(data.scanning){await new Promise(resolve=>setTimeout(resolve,250));}
-                                }while(data.scanning);
-                                if(!data.ok){throw new Error('scan failed');}
+                                const data=await (await fetch('/api/ble/scan')).json();
                                 devicesEl.innerHTML=data.devices.map(item).join('') || '<p>未发现蓝牙设备</p>';
                                 devicesEl.querySelectorAll('button').forEach(btn=>btn.onclick=async()=>{
                                     statusEl.textContent='正在保存目标手柄...';
@@ -401,7 +393,6 @@ namespace io
                         let reconnectStep=0;
                         let reconnectTimer=null;
                         let stateTimer=null;
-                        let connectPending=false;
                         let lastStickSendAt=0;
                         let controlEnabled=true;
                         const sentAt=new Map();
@@ -549,30 +540,9 @@ namespace io
                             reconnectStep++;
                             reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect();},delay);
                         }
-                        async function connect(){
+                        function connect(){
                             if(!isPhone||!controlEnabled||document.hidden||
-                               socket!==null||connectPending)return;
-                            connectPending=true;
-                            try{
-                                const data=await (await fetch('/api/xbox/status')).json();
-                                if(!data.ready){
-                                    const stages={starting:'启动中',services:'通信服务初始化',tasks:'创建控制任务',battery:'电池初始化',indicator:'指示灯初始化',servo:'舵机初始化',imu:'IMU 校准',motor:'电机 FOC 校准',control:'控制器初始化',task_error:'控制任务创建失败'};
-                                    statusEl.textContent=stages[data.stage]||'机器人初始化中';
-                                    scheduleReconnect();
-                                    return;
-                                }
-                                if(data.connected){
-                                    statusEl.textContent='Xbox 已接管，请先断开手柄';
-                                    scheduleReconnect();
-                                    return;
-                                }
-                            }catch(error){
-                                statusEl.textContent='状态查询失败';
-                                scheduleReconnect();
-                                return;
-                            }finally{
-                                connectPending=false;
-                            }
+                               socket!==null)return;
                             statusEl.textContent='正在连接';
                             const scheme=location.protocol==='https:'?'wss':'ws';
                             socket=new WebSocket(`${scheme}://${location.host}/ws/remote`,'shibo-remote-v1');
