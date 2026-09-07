@@ -65,6 +65,32 @@ static ble_scan_state current_ble_scan_state = ble_scan_state::IDLE;
 static hw::gamepad::ble_device ble_scan_devices[BLE_SCAN_MAX];
 static uint8_t ble_scan_device_count = 0;
 
+/**
+ * @brief 将启动阶段转换为网页状态键
+ *
+ * @param stage 当前启动阶段
+ *
+ * @return 稳定的 ASCII 状态键
+ */
+static const char *startup_stage_key(app::startup_stage stage)
+{
+    switch(stage)
+    {
+        case app::startup_stage::STARTING: return "starting";
+        case app::startup_stage::SERVICES: return "services";
+        case app::startup_stage::TASKS: return "tasks";
+        case app::startup_stage::BATTERY: return "battery";
+        case app::startup_stage::INDICATOR: return "indicator";
+        case app::startup_stage::SERVO: return "servo";
+        case app::startup_stage::IMU: return "imu";
+        case app::startup_stage::MOTOR: return "motor";
+        case app::startup_stage::CONTROL: return "control";
+        case app::startup_stage::READY: return "ready";
+        case app::startup_stage::TASK_CREATION_FAILED: return "task_error";
+        default: return "unknown";
+    }
+}
+
 
 /**
  * @brief 从协议帧读取小端 16 位无符号整数
@@ -542,7 +568,9 @@ static esp_err_t handle_xbox_status(httpd_req_t *req)
         "{\"connected\":false,\"target\":";
     if(httpd_resp_sendstr_chunk(req, prefix) != ESP_OK){return ESP_FAIL;}
     if(!send_json_string(req, hw::gamepad::target_address())){return ESP_FAIL;}
-    const char *suffix = app::ready() ? ",\"ready\":true}" : ",\"ready\":false}";
+    char suffix[64];
+    snprintf(suffix, sizeof(suffix), ",\"ready\":%s,\"stage\":\"%s\"}",
+        app::ready() ? "true" : "false", startup_stage_key(app::stage()));
     if(httpd_resp_sendstr_chunk(req, suffix) != ESP_OK){return ESP_FAIL;}
     return httpd_resp_send_chunk(req, nullptr, 0);
 }

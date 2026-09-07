@@ -186,7 +186,8 @@ namespace io
                                 const data=await (await fetch('/api/xbox/status')).json();
                                 document.getElementById('connected').textContent=data.connected?'已连接':'未连接';
                                 document.getElementById('target').textContent=data.target||'自动发现';
-                                document.getElementById('ready').textContent=data.ready?'已就绪':'硬件初始化中';
+                                const stages={starting:'启动中',services:'通信服务初始化',tasks:'创建控制任务',battery:'电池初始化',indicator:'指示灯初始化',servo:'舵机初始化',imu:'IMU 校准',motor:'电机 FOC 校准',control:'控制器初始化',ready:'已就绪',task_error:'控制任务创建失败'};
+                                document.getElementById('ready').textContent=stages[data.stage]||(data.ready?'已就绪':'初始化中');
                             }catch(e){}
                         }
                         function item(dev){
@@ -400,6 +401,7 @@ namespace io
                         let reconnectStep=0;
                         let reconnectTimer=null;
                         let stateTimer=null;
+                        let connectPending=false;
                         let lastStickSendAt=0;
                         let controlEnabled=true;
                         const sentAt=new Map();
@@ -547,9 +549,30 @@ namespace io
                             reconnectStep++;
                             reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect();},delay);
                         }
-                        function connect(){
+                        async function connect(){
                             if(!isPhone||!controlEnabled||document.hidden||
-                               socket!==null)return;
+                               socket!==null||connectPending)return;
+                            connectPending=true;
+                            try{
+                                const data=await (await fetch('/api/xbox/status')).json();
+                                if(!data.ready){
+                                    const stages={starting:'启动中',services:'通信服务初始化',tasks:'创建控制任务',battery:'电池初始化',indicator:'指示灯初始化',servo:'舵机初始化',imu:'IMU 校准',motor:'电机 FOC 校准',control:'控制器初始化',task_error:'控制任务创建失败'};
+                                    statusEl.textContent=stages[data.stage]||'机器人初始化中';
+                                    scheduleReconnect();
+                                    return;
+                                }
+                                if(data.connected){
+                                    statusEl.textContent='Xbox 已接管，请先断开手柄';
+                                    scheduleReconnect();
+                                    return;
+                                }
+                            }catch(error){
+                                statusEl.textContent='状态查询失败';
+                                scheduleReconnect();
+                                return;
+                            }finally{
+                                connectPending=false;
+                            }
                             statusEl.textContent='正在连接';
                             const scheme=location.protocol==='https:'?'wss':'ws';
                             socket=new WebSocket(`${scheme}://${location.host}/ws/remote`,'shibo-remote-v1');
