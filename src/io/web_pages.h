@@ -171,6 +171,7 @@ namespace io
                         <section class="panel">
                             <div class="row"><span>手柄连接</span><strong id="connected">--</strong></div>
                             <div class="row"><span>目标地址</span><strong id="target">--</strong></div>
+                            <div class="row"><span>控制系统</span><strong id="ready">--</strong></div>
                         </section>
                         <button id="scan">扫描蓝牙设备</button>
                         <div id="status"></div>
@@ -185,6 +186,7 @@ namespace io
                                 const data=await (await fetch('/api/xbox/status')).json();
                                 document.getElementById('connected').textContent=data.connected?'已连接':'未连接';
                                 document.getElementById('target').textContent=data.target||'自动发现';
+                                document.getElementById('ready').textContent=data.ready?'已就绪':'硬件初始化中';
                             }catch(e){}
                         }
                         function item(dev){
@@ -195,7 +197,12 @@ namespace io
                         scanBtn.onclick=async()=>{
                             scanBtn.disabled=true; devicesEl.innerHTML=''; statusEl.textContent='正在扫描 BLE，约 4 秒...';
                             try{
-                                const data=await (await fetch('/api/ble/scan')).json();
+                                let data;
+                                do{
+                                    data=await (await fetch('/api/ble/scan')).json();
+                                    if(data.scanning){await new Promise(resolve=>setTimeout(resolve,250));}
+                                }while(data.scanning);
+                                if(!data.ok){throw new Error('scan failed');}
                                 devicesEl.innerHTML=data.devices.map(item).join('') || '<p>未发现蓝牙设备</p>';
                                 devicesEl.querySelectorAll('button').forEach(btn=>btn.onclick=async()=>{
                                     statusEl.textContent='正在保存目标手柄...';
@@ -565,7 +572,7 @@ namespace io
                                 if(status===0&&started!==undefined){
                                     statusEl.textContent=`已连接 · ${Math.round(performance.now()-started)} ms`;
                                 }else if(status!==0){
-                                    const errors={1:'协议帧错误',2:'Xbox 已接管',3:'已有遥控连接',4:'AP 配网模式不可用'};
+                                    const errors={1:'协议帧错误',2:'Xbox 已接管',3:'已有遥控连接',4:'AP 配网模式不可用',6:'机器人硬件初始化中'};
                                     statusEl.textContent=errors[status]||`控制错误 ${status}`;
                                 }
                                 for(const key of sentAt.keys()){

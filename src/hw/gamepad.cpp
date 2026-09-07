@@ -39,6 +39,21 @@ static ble_scan_callbacks scan_callbacks;
 /* ---- BLE 连接内部流程 ---- */
 
 /**
+ * @brief 解除 client 对回调对象的所有权后安全删除 client
+ *
+ * xbox 包装对象负责释放自身的 client 回调。删除 NimBLE client 前先改为
+ * 默认回调，避免 NimBLE 和 xbox 析构函数重复释放同一个对象。
+ *
+ * @param client 待删除的 NimBLE client
+ */
+static void delete_ble_client(NimBLEClient *client)
+{
+    if(!client){return;}
+    client->setClientCallbacks(nullptr, false);
+    NimBLEDevice::deleteClient(client);
+}
+
+/**
  * @brief 清空 Xbox 输入快照并切换输入流代次
  */
 static void clear_input_state()
@@ -95,7 +110,7 @@ static void stop_ble_activity()
     scan->clearResults();
 
     std::vector<NimBLEClient *> clients = NimBLEDevice::getConnectedClients();
-    for(NimBLEClient *client : clients){NimBLEDevice::deleteClient(client);}
+    for(NimBLEClient *client : clients){delete_ble_client(client);}
 
     uint32_t start_ms = millis();
     while(NimBLEDevice::getConnectedClients().size() &&
@@ -108,7 +123,7 @@ static void stop_ble_activity()
     {
         NimBLEClient *client = NimBLEDevice::getDisconnectedClient();
         if(!client){break;}
-        NimBLEDevice::deleteClient(client);
+        delete_ble_client(client);
     }
 }
 

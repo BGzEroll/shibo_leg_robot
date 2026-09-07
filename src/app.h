@@ -3,6 +3,7 @@
 
 namespace app
 {
+    bool ready();
     void start();
 }
 
