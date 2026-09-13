@@ -40,8 +40,8 @@ static void check_svpwm()
 int main()
 {
     check_svpwm();
-    foc_motor left(10.6f, 0.0796f, 0.0796f, 8.0f);
-    foc_motor right(10.6f, 0.0796f, 0.0796f, 8.0f);
+    foc_motor left;
+    foc_motor right;
     left.sample(4090, UINT32_MAX - 499);
     left.sample(4, 500);
     assert(left.full_count == 4100 && left.speed_mrad_s > 0);

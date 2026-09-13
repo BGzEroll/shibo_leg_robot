@@ -7,9 +7,6 @@
 class foc_motor
 {
     public:
-        foc_motor(float resistance, float kt, float ke, float bus_voltage);
-
-    public:
         struct duty
         {
             uint16_t phase[3]; // Q15，32768 表示 100%。
@@ -26,8 +23,6 @@ class foc_motor
         int8_t direction = 0;
 
     private:
-        int32_t torque_gain_q16;
-        int32_t bemf_gain_q14;
         uint16_t last_raw = 0;
         uint16_t zero_phase = 0;
         bool sampled = false;

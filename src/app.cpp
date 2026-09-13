@@ -1,3 +1,5 @@
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+
 #include "app.h"
 
 #include "control/control.h"
@@ -12,6 +14,7 @@
 #include "hw/wifi.h"
 #include "io/host.h"
 #include "io/web.h"
+#include "esp_log.h"
 #include <atomic>
 
 static std::atomic<bool> application_ready{false};
@@ -78,6 +81,7 @@ bool app::ready()
  */
 void app::start()
 {
+    esp_log_level_set("app", ESP_LOG_INFO);
     application_ready.store(false, std::memory_order_release);
     delay(1000);
 
@@ -94,15 +98,16 @@ void app::start()
     hw::servo::init();
     if(!hw::imu::init())
     {
-        log_e("IMU initialization failed; application tasks remain blocked");
+        ESP_LOGE("app", "IMU initialization failed; application tasks remain blocked");
         return;
     }
     if(!hw::motor::init())
     {
-        log_e("Motor initialization failed; application tasks remain blocked");
+        ESP_LOGE("app", "Motor initialization failed; application tasks remain blocked");
         return;
     }
     control::init();
 
     application_ready.store(true, std::memory_order_release);
+    ESP_LOGI("app", "Hardware ready; sensor, FOC and control tasks released");
 }

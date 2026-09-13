@@ -8,7 +8,6 @@ class pid
 {
     public:
         pid(float p, float i, float d, float ramp, float limit);
-        ~pid() = default;
 
     public:
         float operator()(float error);
@@ -20,7 +19,7 @@ class pid
         float output_ramp;
         float limit;
 
-    protected:
+    private:
         float error_prev;
         float output_prev;
         float integral_prev;

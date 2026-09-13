@@ -1,19 +1,21 @@
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+
 #include "motor.h"
 
-#include "as5600.h"
-#include "motor_pwm.h"
+#include "foc_motor.h"
+#include "driver/mcpwm.h"
+#include "driver/gpio.h"
+#include "hal/mcpwm_ll.h"
+#include "esp_rom_sys.h"
 #include "sensor.h"
 #include "util/latest.h"
 #include "esp_timer.h"
+#include "esp_log.h"
 #include "freertos/task.h"
 #include <math.h>
 
 /* ---- 双电机固定配置与快照 ---- */
 
-static constexpr float PHASE_RESISTANCE = 21.2f / 2.0f; // 星接线间测量值 / 2。
-static constexpr float KT = 0.0796f;
-static constexpr float KE = 0.0796f;
-static constexpr float BUS_VOLTAGE = 8.0f;
 static constexpr uint32_t ENCODER_TIMEOUT_US = 5000;
 static constexpr uint32_t COMMAND_TIMEOUT_US = 20000;
 static constexpr int32_t ALIGNMENT_UQ = 12288; // 3 V / 8 V，Q15。
@@ -21,22 +23,27 @@ static constexpr int32_t DIRECTION_STEPS = 500;
 static constexpr int32_t DIRECTION_MIN_COUNT = 41;
 static constexpr float COUNT_TO_RAD = 6.28318530718f / 4096.0f;
 
-static as5600 encoders[] = {as5600(hw::sensor::left_bus), as5600(hw::sensor::right_bus)};
-static foc_motor motors[] =
+static foc_motor motors[2];
+static constexpr gpio_num_t ENABLE_PINS[] = {GPIO_NUM_22, GPIO_NUM_12};
+static constexpr gpio_num_t PWM_PINS[2][3] =
 {
-    foc_motor(PHASE_RESISTANCE, KT, KE, BUS_VOLTAGE),
-    foc_motor(PHASE_RESISTANCE, KT, KE, BUS_VOLTAGE)
+    {GPIO_NUM_32, GPIO_NUM_33, GPIO_NUM_25},
+    {GPIO_NUM_26, GPIO_NUM_27, GPIO_NUM_14}
 };
-static motor_pwm outputs[] =
+static constexpr uint32_t PWM_PERIOD = 3200; // 160 MHz / (2 * 25 kHz)。
+static bool output_enabled[2]{};
+
+struct encoder_sample
 {
-    motor_pwm(MCPWM_OPR_A, GPIO_NUM_32, GPIO_NUM_33, GPIO_NUM_25, GPIO_NUM_22),
-    motor_pwm(MCPWM_OPR_B, GPIO_NUM_26, GPIO_NUM_27, GPIO_NUM_14, GPIO_NUM_12)
+    uint32_t timestamp_us = 0;
+    uint16_t raw = 0;
+    bool valid = false;
 };
 
 struct rotor_sample
 {
     uint32_t sequence = 0;
-    as5600::sample axes[2];
+    encoder_sample axes[2];
 };
 
 struct torque_command
@@ -52,16 +59,109 @@ static util::latest<torque_command> command_latest;
 static uint32_t sequence = 0;
 static bool ready = false;
 
+/* ---- 本机 PWM 与编码器 ---- */
+
+/** @brief 一次性初始化双电机共用的三相中心对齐 25 kHz 定时器 */
+static bool init_pwm()
+{
+    // 固定双电机，先关闭两侧 EN，再连接六路 PWM。
+    for(uint8_t axis = 0; axis < 2; axis++)
+    {
+        gpio_set_level(ENABLE_PINS[axis], 0);
+        if(gpio_set_direction(ENABLE_PINS[axis], GPIO_MODE_OUTPUT) != ESP_OK){return false;}
+        output_enabled[axis] = false;
+        for(uint8_t phase = 0; phase < 3; phase++)
+        {
+            if(mcpwm_gpio_init(MCPWM_UNIT_0,
+                (mcpwm_io_signals_t)(2 * phase + axis), PWM_PINS[axis][phase]) != ESP_OK)
+            {
+                return false;
+            }
+        }
+    }
+    mcpwm_config_t config{};
+    config.frequency = 50000;
+    config.counter_mode = MCPWM_UP_DOWN_COUNTER;
+    config.duty_mode = MCPWM_DUTY_MODE_0;
+    for(uint8_t i = 0; i < 3; i++)
+    {
+        if(mcpwm_init(MCPWM_UNIT_0, (mcpwm_timer_t)i, &config) != ESP_OK)
+        {
+            return false;
+        }
+        mcpwm_stop(MCPWM_UNIT_0, (mcpwm_timer_t)i);
+    }
+    MCPWM0.clk_cfg.clk_prescale = 0;
+    mcpwm_sync_config_t sync{};
+    sync.sync_sig = MCPWM_SELECT_TIMER0_SYNC;
+    sync.count_direction = MCPWM_TIMER_DIRECTION_UP;
+    for(uint8_t i = 0; i < 3; i++)
+    {
+        MCPWM0.timer[i].timer_cfg0.timer_prescale = 0;
+        MCPWM0.timer[i].timer_cfg0.timer_period = PWM_PERIOD;
+        MCPWM0.timer[i].timer_cfg0.timer_period_upmethod = 0;
+        // 三相 A/B 比较值都在同步零点装载。
+        MCPWM0.operators[i].gen_stmp_cfg.gen_a_upmethod = 1;
+        MCPWM0.operators[i].gen_stmp_cfg.gen_b_upmethod = 1;
+        if(mcpwm_sync_configure(MCPWM_UNIT_0, (mcpwm_timer_t)i, &sync) != ESP_OK ||
+           mcpwm_start(MCPWM_UNIT_0, (mcpwm_timer_t)i) != ESP_OK)
+        {
+            return false;
+        }
+    }
+    return mcpwm_set_timer_sync_output(MCPWM_UNIT_0, MCPWM_TIMER_0,
+        MCPWM_SWSYNC_SOURCE_TEZ) == ESP_OK;
+}
+
+/** @brief 使能前等待比较值装载；关闭时立即拉低 EN */
+static void set_enabled(uint8_t axis, bool value)
+{
+    if(value == output_enabled[axis]){return;}
+    if(value){esp_rom_delay_us(50);}
+    gpio_set_level(ENABLE_PINS[axis], value);
+    output_enabled[axis] = value;
+}
+
+/** @brief 通过 IDF LL 写入 Q15 占空比，禁止三相更新中途装载 */
+static void write_pwm(uint8_t axis, const foc_motor::duty &duty)
+{
+    MCPWM0.update_cfg.global_up_en = 0;
+    for(uint8_t i = 0; i < 3; i++)
+    {
+        mcpwm_ll_operator_set_compare_value(&MCPWM0, i, axis,
+            ((uint32_t)duty.phase[i] * PWM_PERIOD + 16384) >> 15);
+    }
+    MCPWM0.update_cfg.global_up_en = 1;
+}
+
+/** @brief 读取本机 AS5600 的 RAW_ANGLE，失败样本不更新时间戳 */
+static encoder_sample read_encoder(uint8_t axis)
+{
+    encoder_sample value;
+    uint8_t data[2];
+    i2c_bus &bus = axis == 0 ? hw::sensor::left_bus : hw::sensor::right_bus;
+    if(!bus.read_bytes(0x36, 0x0C, data, 2)){return value;}
+    value.raw = ((uint16_t)(data[0] & 0x0F) << 8) | data[1];
+    value.timestamp_us = (uint32_t)esp_timer_get_time();
+    value.valid = true;
+    return value;
+}
+
 /* ---- 启动校准，仅在运行任务放行前读取 I2C ---- */
 
 /** @brief 保持输出并读取新编码器样本，通信失败立即退出 */
-static bool wait_encoder(uint8_t axis, uint32_t time_ms)
+static bool wait_encoder(uint8_t axis, uint32_t time_ms, const char *stage)
 {
     for(uint32_t i = 0; i < time_ms; i++)
     {
         vTaskDelay(pdMS_TO_TICKS(1));
-        const as5600::sample value = encoders[axis].read();
-        if(!value.valid){return false;}
+        const encoder_sample value = read_encoder(axis);
+        if(!value.valid)
+        {
+            ESP_LOGE("motor", "%s calibration: I2C read failed during %s",
+                axis == 0 ? "left" : "right", stage);
+            return false;
+        }
         motors[axis].sample(value.raw, value.timestamp_us);
     }
     return true;
@@ -71,27 +171,29 @@ static bool wait_encoder(uint8_t axis, uint32_t time_ms)
 static bool calibrate(uint8_t axis)
 {
     foc_motor &motor = motors[axis];
-    motor_pwm &output = outputs[axis];
-    if(!wait_encoder(axis, 1)){return false;}
-    output.write(foc_motor::svpwm(ALIGNMENT_UQ, 0xC000));
-    output.set_enabled(true);
-    if(!wait_encoder(axis, 300)){return false;}
+    if(!wait_encoder(axis, 1, "first sample")){return false;}
+    write_pwm(axis, foc_motor::svpwm(ALIGNMENT_UQ, 0xC000));
+    set_enabled(axis, true);
+    if(!wait_encoder(axis, 300, "settle")){return false;}
     const int64_t start = motor.full_count;
     for(int32_t i = 0; i <= DIRECTION_STEPS; i++)
     {
-        output.write(foc_motor::svpwm(ALIGNMENT_UQ,
+        write_pwm(axis, foc_motor::svpwm(ALIGNMENT_UQ,
             (uint16_t)(0xC000 + i * 65536 / DIRECTION_STEPS)));
-        if(!wait_encoder(axis, 2)){return false;}
+        if(!wait_encoder(axis, 2, "forward scan")){return false;}
     }
     const int64_t forward = motor.full_count;
     for(int32_t i = DIRECTION_STEPS; i >= 0; i--)
     {
-        output.write(foc_motor::svpwm(ALIGNMENT_UQ,
+        write_pwm(axis, foc_motor::svpwm(ALIGNMENT_UQ,
             (uint16_t)(0xC000 + i * 65536 / DIRECTION_STEPS)));
-        if(!wait_encoder(axis, 2)){return false;}
+        if(!wait_encoder(axis, 2, "reverse scan")){return false;}
     }
     const int64_t forward_delta = forward - start;
     const int64_t reverse_delta = motor.full_count - forward;
+    ESP_LOGI("motor", "%s calibration: forward=%lld reverse=%lld count (minimum=%ld)",
+        axis == 0 ? "left" : "right", (long long)forward_delta,
+        (long long)reverse_delta, (long)DIRECTION_MIN_COUNT);
     int8_t direction = 0;
     if(forward_delta >= DIRECTION_MIN_COUNT && reverse_delta <= -DIRECTION_MIN_COUNT)
     {
@@ -103,13 +205,15 @@ static bool calibrate(uint8_t axis)
     }
     else
     {
+        ESP_LOGE("motor", "%s calibration: direction check failed, forward=%lld reverse=%lld",
+            axis == 0 ? "left" : "right", (long long)forward_delta, (long long)reverse_delta);
         return false;
     }
-    if(!wait_encoder(axis, 300)){return false;}
+    if(!wait_encoder(axis, 300, "settle")){return false;}
     int64_t sum = 0;
     for(uint8_t i = 0; i < 32; i++)
     {
-        if(!wait_encoder(axis, 1)){return false;}
+        if(!wait_encoder(axis, 1, "zero average")){return false;}
         sum += motor.full_count * 16;
     }
     motor.align(direction, (uint16_t)(sum / 32));
@@ -144,18 +248,17 @@ void hw::motor::sample_encoders()
 {
     rotor_sample value;
     value.sequence = ++sequence;
-    value.axes[0] = encoders[0].read();
-    value.axes[1] = encoders[1].read();
+    value.axes[0] = read_encoder(0);
+    value.axes[1] = read_encoder(1);
     rotor_latest.set(value);
 }
 
 /** @brief 初始化固定硬件并逐台校准，返回时两侧 EN 均关闭 */
 bool hw::motor::init()
 {
+    esp_log_level_set("motor", ESP_LOG_INFO);
     ready = false;
-    const bool left_output = outputs[0].init();
-    const bool right_output = outputs[1].init();
-    if(!left_output || !right_output || !motor_pwm::init_timers() ||
+    if(!init_pwm() ||
        !hw::sensor::left_bus.init() || !hw::sensor::right_bus.init() ||
        !rotor_latest.init() || !encoder_latest.init() || !command_latest.init())
     {
@@ -163,9 +266,16 @@ bool hw::motor::init()
     }
     for(uint8_t i = 0; i < 2; i++)
     {
+        ESP_LOGI("motor", "%s calibration start (Uq=3V)", i == 0 ? "left" : "right");
         const bool calibrated = calibrate(i);
-        outputs[i].set_enabled(false);
-        if(!calibrated){return false;}
+        set_enabled(i, false);
+        if(!calibrated)
+        {
+            ESP_LOGE("motor", "%s calibration failed; motors disabled, startup aborted",
+                i == 0 ? "left" : "right");
+            return false;
+        }
+        ESP_LOGI("motor", "%s calibration passed", i == 0 ? "left" : "right");
     }
     command_latest.set(torque_command{});
     ready = true;
@@ -210,8 +320,8 @@ void hw::motor::foc_loop(void *arg)
         }
         for(uint8_t i = 0; i < 2; i++)
         {
-            if(enabled){outputs[i].write(motors[i].update(command.torque_uNm[i], now_us));}
-            outputs[i].set_enabled(enabled);
+            if(enabled){write_pwm(i, motors[i].update(command.torque_uNm[i], now_us));}
+            set_enabled(i, enabled);
         }
         taskYIELD();
     }

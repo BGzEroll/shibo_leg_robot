@@ -8,6 +8,16 @@ static constexpr int32_t POLE_PAIRS = 7;
 static constexpr uint32_t SPEED_FILTER_US = 3000;
 static constexpr uint32_t MAX_PREDICT_US = 1000;
 
+// 本机固定参数：星接线间 21.2 Ω，单相 10.6 Ω，Kt=Ke=0.0796，母线 8 V。
+static constexpr float PHASE_RESISTANCE = 21.2f / 2.0f;
+static constexpr float KT = 0.0796f;
+static constexpr float KE = 0.0796f;
+static constexpr float BUS_VOLTAGE = 8.0f;
+static constexpr int32_t TORQUE_GAIN_Q16 = (int32_t)(
+    PHASE_RESISTANCE / KT / BUS_VOLTAGE * 32768.0f / 1000000.0f * 65536.0f + 0.5f);
+static constexpr int32_t BEMF_GAIN_Q14 = (int32_t)(
+    KE / BUS_VOLTAGE * 32768.0f / 1000.0f * 16384.0f + 0.5f);
+
 /** @brief STM32 main 的四分之一周期正弦查表与线性插值 */
 static int32_t lookup_sin(uint16_t phase)
 {
@@ -54,14 +64,6 @@ static int32_t lookup_sin(uint16_t phase)
 }
 
 
-/** @brief 在初始化时计算力矩和反电动势的定点系数 */
-foc_motor::foc_motor(float resistance, float kt, float ke, float bus_voltage)
-    : torque_gain_q16((int32_t)(resistance / kt / bus_voltage *
-          32768.0f / 1000000.0f * 65536.0f + 0.5f)),
-      bemf_gain_q14((int32_t)(ke / bus_voltage * 32768.0f / 1000.0f * 16384.0f + 0.5f))
-{
-}
-
 /** @brief 每个新样本只更新一次跨圈计数和 3 ms 一阶速度滤波 */
 void foc_motor::sample(uint16_t raw, uint32_t sample_us)
 {
@@ -103,8 +105,8 @@ foc_motor::duty foc_motor::update(int32_t torque_uNm, uint32_t now_us) const
     const uint16_t mechanical = (uint16_t)(((uint32_t)last_raw << 4) + advance);
     const uint16_t electrical = (uint16_t)(
         (int32_t)direction * POLE_PAIRS * mechanical - zero_phase);
-    const int64_t uq = ((int64_t)torque_uNm * torque_gain_q16 >> 16) +
-        ((int64_t)direction * speed_mrad_s * bemf_gain_q14 >> 14);
+    const int64_t uq = ((int64_t)torque_uNm * TORQUE_GAIN_Q16 >> 16) +
+        ((int64_t)direction * speed_mrad_s * BEMF_GAIN_Q14 >> 14);
     return svpwm((int32_t)std::max(-(int64_t)OUTPUT_LIMIT,
         std::min((int64_t)OUTPUT_LIMIT, uq)), electrical);
 }

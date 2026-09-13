@@ -8,7 +8,6 @@ class lowpass_filter
 {
     public:
         lowpass_filter(float time_constant);
-        ~lowpass_filter() = default;
 
     public:
         float operator()(float input);
@@ -16,7 +15,7 @@ class lowpass_filter
     public:
         float time_constant;
 
-    protected:
+    private:
         uint32_t timestamp_prev;
         float y_prev;
 };
