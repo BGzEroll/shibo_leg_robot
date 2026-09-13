@@ -10,3 +10,19 @@ constexpr int GPIO_PULLUP_ENABLE = 1;
 extern int fake_gpio[40];
 inline int gpio_set_level(gpio_num_t pin, int value){fake_gpio[pin] = value; return 0;}
 inline int gpio_set_direction(gpio_num_t, int){return 0;}
+
+// 方向设置不会切换 IO_MUX；只有完整配置才连接 GPIO 输出。
+inline bool fake_gpio_mux[40]{};
+struct gpio_config_t
+{
+    uint64_t pin_bit_mask;
+    int mode;
+};
+inline int gpio_config(const gpio_config_t *config)
+{
+    for(uint8_t pin = 0; pin < 40; pin++)
+    {
+        if(config->pin_bit_mask & (1ULL << pin)){fake_gpio_mux[pin] = true;}
+    }
+    return 0;
+}

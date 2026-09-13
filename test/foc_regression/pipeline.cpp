@@ -41,7 +41,8 @@ int i2c_master_write_read_device(i2c_port_t port, uint8_t addr,
         return 0;
     }
     assert(addr == 0x36 && *reg == 0x0C && size == 2);
-    if(simulate_motor && fake_gpio[port == 0 ? 22 : 12])
+    if(simulate_motor && fake_gpio[port == 0 ? 22 : 12] &&
+       fake_gpio_mux[port == 0 ? 22 : 12])
     {
         const double a = MCPWM0.compare[0][port];
         const double b = MCPWM0.compare[1][port];
@@ -66,6 +67,7 @@ static void step_foc()
 /** @brief 覆盖校准失败、双实例校准、采样比例、失效停机和上层单位 */
 int main()
 {
+    fake_gpio_mux[22] = true; // GPIO12 模拟上电后尚未切到 GPIO 功能。
     fail_bus[0] = true;
     assert(!hw::motor::init());
     assert(!fake_gpio[22] && !fake_gpio[12]);

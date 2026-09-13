@@ -404,8 +404,8 @@ static void solve_output(const control::balance_command &command, control::statu
         }
         status.output[i] *= blend;
     }
-    status.motor.left = status.output[0];
-    status.motor.right = status.output[1];
+    status.motor.left = status.output[0] *0.1;
+    status.motor.right = status.output[1] *0.1;
 }
 
 /* ---- balance 公共 API ---- */

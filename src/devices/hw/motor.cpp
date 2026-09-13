@@ -68,7 +68,11 @@ static bool init_pwm()
     for(uint8_t axis = 0; axis < 2; axis++)
     {
         gpio_set_level(ENABLE_PINS[axis], 0);
-        if(gpio_set_direction(ENABLE_PINS[axis], GPIO_MODE_OUTPUT) != ESP_OK){return false;}
+        // GPIO12 需显式切换 IO_MUX；仅 set_direction 不等价于原 pinMode。
+        gpio_config_t config{};
+        config.pin_bit_mask = 1ULL << ENABLE_PINS[axis];
+        config.mode = GPIO_MODE_OUTPUT;
+        if(gpio_config(&config) != ESP_OK){return false;}
         output_enabled[axis] = false;
         for(uint8_t phase = 0; phase < 3; phase++)
         {
