@@ -1,37 +1,24 @@
 #ifndef I2C_BUS_H
 #define I2C_BUS_H
 
-#include <Arduino.h>
-#include <Wire.h>
+#include "driver/i2c.h"
 
-enum class i2c_result : uint8_t
-{
-    OK = 0,
-    INVALID_BUS,
-    INVALID_ARG,
-    NOT_INITIALIZED,
-    TX_BUFFER_FULL,
-    ADDR_NACK,
-    DATA_NACK,
-    OTHER_ERROR,
-    TIMEOUT,
-    SHORT_READ,
-    SHORT_WRITE
-};
-
+// 每条总线只创建一个实例；运行期由 sensor_task 独占。
 class i2c_bus
 {
     public:
-        explicit i2c_bus(uint8_t bus_id = 0);
+        i2c_bus(i2c_port_t port, gpio_num_t scl, gpio_num_t sda);
 
     public:
-        i2c_result init();
-        i2c_result read_bytes(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len);
-        i2c_result write_bytes(uint8_t addr, uint8_t reg, const uint8_t *buf, uint8_t len);
-        TwoWire *get_TwoWire_handle() const;
+        bool init();
+        bool read_bytes(uint8_t addr, uint8_t reg, uint8_t *data, uint8_t size);
+        bool write_byte(uint8_t addr, uint8_t reg, uint8_t value);
 
     private:
-        uint8_t bus_id;
+        i2c_port_t port;
+        gpio_num_t scl;
+        gpio_num_t sda;
+        bool ready = false;
 };
 
 #endif

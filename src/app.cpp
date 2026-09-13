@@ -21,7 +21,7 @@ static std::atomic<bool> application_ready{false};
 static TaskFunction_t deferred_tasks[] =
 {
     hw::sensor::task_entry,
-    control::foc_task_entry,
+    hw::motor::foc_loop,
     control::control_task_entry,
     control::service_task_entry
 };
@@ -50,7 +50,7 @@ static void create_application_tasks()
     xTaskCreatePinnedToCore(
         deferred_task_entry, "sensor_task", 4096, &deferred_tasks[0], 5, nullptr, 1);
     xTaskCreatePinnedToCore(
-        deferred_task_entry, "foc_task", 4096, &deferred_tasks[1], 5, nullptr, 1);
+        deferred_task_entry, "foc_loop", 4096, &deferred_tasks[1], 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         deferred_task_entry, "control_task", 4096, &deferred_tasks[2], 5, nullptr, 0);
     // xTaskCreatePinnedToCore(
@@ -92,8 +92,16 @@ void app::start()
     hw::battery::init();
     hw::indicator::init();
     hw::servo::init();
-    hw::imu::init();
-    hw::motor::init();
+    if(!hw::imu::init())
+    {
+        log_e("IMU initialization failed; application tasks remain blocked");
+        return;
+    }
+    if(!hw::motor::init())
+    {
+        log_e("Motor initialization failed; application tasks remain blocked");
+        return;
+    }
     control::init();
 
     application_ready.store(true, std::memory_order_release);

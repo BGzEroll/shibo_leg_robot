@@ -1,8 +1,0 @@
-#ifndef FOC_DEFAULTS_H
-#define FOC_DEFAULTS_H
-
-#define DEF_POWER_SUPPLY 12.0f
-#define DEF_VOLTAGE_SENSOR_ALIGN 3.0f
-#define DEF_VEL_FILTER_Tf 0.005
-
-#endif

@@ -1,6 +1,7 @@
 #include "mpu6050.h"
 
 #include "bus/i2c_bus.h"
+#include "esp_timer.h"
 #include <math.h>
 #include <string.h>
 
@@ -35,33 +36,32 @@ mpu6050::mpu6050(i2c_bus &i2c, uint8_t addr, float acc_coef)
  *
  * @param cail 是否进行陀螺仪校准
  */
-void mpu6050::init(bool cail)
+bool mpu6050::init(bool cail)
 {
-    i2c.init();
-    write_cfg(MPU6050_SMPLRT_DIV, 0x00);
-    write_cfg(MPU6050_CONFIG, 0x00);
-    write_cfg(MPU6050_GYRO_CONFIG, 0x08);
-    write_cfg(MPU6050_ACCEL_CONFIG, 0x00);
-    write_cfg(MPU6050_PWR_MGMT_1, 0x01);
-
-    if(cail){get_gyro_offset();}
+    if(!i2c.init() ||
+       !write_cfg(MPU6050_SMPLRT_DIV, 0x00) ||
+       !write_cfg(MPU6050_CONFIG, 0x00) ||
+       !write_cfg(MPU6050_GYRO_CONFIG, 0x08) ||
+       !write_cfg(MPU6050_ACCEL_CONFIG, 0x00) ||
+       !write_cfg(MPU6050_PWR_MGMT_1, 0x01))
+    {
+        return false;
+    }
+    return !cail || get_gyro_offset();
 }
 
 /**
  * @brief 更新 MPU6050 姿态数据
  */
-void mpu6050::update()
+bool mpu6050::update()
 {
-    get_raw();
+    if(!i2c.read_bytes(addr, 0x3B, raw, 14))
+    {
+        prev_Ts = 0;
+        return false;
+    }
     process_data();
-}
-
-/**
- * @brief 读取 MPU6050 原始传感器数据
- */
-void mpu6050::get_raw()
-{
-    i2c.read_bytes(addr, 0x3B, raw, 14);
+    return true;
 }
 
 /* ---- MPU6050 姿态解算 ---- */
@@ -120,28 +120,28 @@ void mpu6050::process_data()
  * @param reg 寄存器地址
  * @param val 寄存器写入值
  */
-void mpu6050::write_cfg(uint8_t reg, uint8_t val)
+bool mpu6050::write_cfg(uint8_t reg, uint8_t val)
 {
-    i2c.write_bytes(addr, reg, &val, 1);
+    return i2c.write_byte(addr, reg, val);
 }
 
 /**
  * @brief 采样并计算陀螺仪零偏
  */
-void mpu6050::get_gyro_offset()
+bool mpu6050::get_gyro_offset()
 {
     // 预读 1000 次
     uint8_t tmp[6];
     for(uint32_t i = 0; i < 1000; i++)
     {
-        i2c.read_bytes(addr, 0x43, tmp, 6);
+        if(!i2c.read_bytes(addr, 0x43, tmp, 6)){return false;}
     }
 
     int32_t sum[3] = {0};
     int16_t raw[3] = {0};
     for(uint32_t i = 0; i < 3000; i++)
     {
-        i2c.read_bytes(addr, 0x43, tmp, 6);
+        if(!i2c.read_bytes(addr, 0x43, tmp, 6)){return false;}
         for(uint8_t j = 0; j < 3; j++)
         {
             raw[j] = (int16_t)((tmp[0 + 2 * j] << 8) | tmp[1 + 2 * j]);
@@ -153,4 +153,5 @@ void mpu6050::get_gyro_offset()
     {
         gyro_offset[i] = (float)sum[i] / 65.5f * DEG2RAD / 3000.0f;
     }
+    return true;
 }

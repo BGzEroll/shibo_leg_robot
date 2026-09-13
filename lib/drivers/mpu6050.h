@@ -9,8 +9,8 @@ class mpu6050
         mpu6050(i2c_bus &i2c, uint8_t addr, float acc_coef);
 
     public:
-        void init(bool cail = false);
-        void update();
+        bool init(bool cail = false);
+        bool update();
 
     public:
         float temperature;
@@ -24,14 +24,13 @@ class mpu6050
         float acc_coef;
 
     private:
-        void get_raw();
         void process_data();
-        void write_cfg(uint8_t reg, uint8_t val);
-        void get_gyro_offset();
+        bool write_cfg(uint8_t reg, uint8_t val);
+        bool get_gyro_offset();
 
     private:
         uint8_t raw[14];
-        float gyro_offset[3];
+        float gyro_offset[3]{};
         uint32_t prev_Ts;
         float gyro_angle[3];
 };
